@@ -1,0 +1,17 @@
+.DS_Store
+**/.DS_Store
+
+DerivedData/
+build/
+
+*.xcuserstate
+*.xcbkptlist
+xcuserdata/
+**/xcuserdata/
+
+# Logs
+*.log
+
+# AI tool configs
+.claude/
+.codex/
