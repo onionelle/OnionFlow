@@ -358,7 +358,6 @@ final class MusicPlayerViewModel: ObservableObject {
 
     func setOnlinePlaylist(_ songs: [NeteaseSong], cacheKey: String? = nil) {
         self.onlinePlaylist = songs
-        resetOnlineFailureState()
         if let cacheKey {
             cachedOnlinePlaylists[cacheKey] = songs
         }
@@ -890,7 +889,7 @@ final class MusicPlayerViewModel: ObservableObject {
         }
     }
 
-    private func resetOnlineFailureState() {
+    func resetOnlineFailureState() {
         failedOnlineSongIDs.removeAll()
         onlineSongFailureMessages.removeAll()
     }
@@ -925,7 +924,7 @@ final class MusicPlayerViewModel: ObservableObject {
         for song: NeteaseSong,
         generation: Int,
         baselineTime: TimeInterval,
-        timeoutNanoseconds: UInt64 = 6_000_000_000
+        timeoutNanoseconds: UInt64 = 8_000_000_000
     ) {
         playbackStartWatchdogTask?.cancel()
         playbackStartWatchdogTask = Task { @MainActor [weak self] in

@@ -430,6 +430,9 @@ struct NeteaseDiscoveryView: View {
     
     private func loadSongs(for playlistId: String, forceRefresh: Bool = false) {
         guard !isLoading else { return }
+        if forceRefresh {
+            musicViewModel.resetOnlineFailureState()
+        }
         if !forceRefresh, playlistId != "search", playlistId != "simi",
            let cachedSongs = musicViewModel.cachedOnlinePlaylist(for: playlistId) {
             errorMessage = nil
@@ -604,6 +607,42 @@ struct NeteaseOnlinePreviewItem: View {
     private var isFailed: Bool {
         musicViewModel.failedOnlineSongIDs.contains(song.id)
     }
+
+    private var failureType: String? {
+        guard isFailed else { return nil }
+        let msg = musicViewModel.onlineSongFailureMessages[song.id] ?? ""
+        if msg.contains("超时") {
+            return "timeout"
+        } else if msg.contains("版权") || msg.contains("VIP") {
+            return "copyright"
+        } else {
+            return "other"
+        }
+    }
+
+    private var failureColor: Color {
+        guard let type = failureType else { return Color.red }
+        switch type {
+        case "timeout":
+            return Color(red: 0.98, green: 0.60, blue: 0.18) // Amber/Orange
+        case "copyright":
+            return Color(red: 0.98, green: 0.28, blue: 0.28) // Coral Red
+        default:
+            return Color(red: 0.98, green: 0.28, blue: 0.28) // Coral Red
+        }
+    }
+
+    private var failureLabel: String {
+        guard let type = failureType else { return "" }
+        switch type {
+        case "timeout":
+            return " [超时]"
+        case "copyright":
+            return " [VIP/版权]"
+        default:
+            return " [失败]"
+        }
+    }
     
     var body: some View {
         HStack(spacing: 0) {
@@ -619,22 +658,28 @@ struct NeteaseOnlinePreviewItem: View {
                             Text("\(index + 1)")
                                 .font(.system(size: 9.2, weight: .regular, design: .monospaced))
                                 .italic()
-                                .foregroundStyle(isFailed ? Color.red.opacity(0.48) : Color.white.opacity(0.30))
+                                .foregroundStyle(isFailed ? failureColor.opacity(0.48) : Color.white.opacity(0.30))
                         }
                     }
                     .frame(width: 20, alignment: .trailing)
 
                     Text(song.name)
                         .font(.system(size: 9.8, weight: .regular))
-                        .foregroundStyle(isFailed ? Color.red.opacity(0.68) : (isCurrentTrack ? musicAccentColor : Color.white.opacity(0.64)))
+                        .foregroundStyle(isFailed ? failureColor.opacity(0.68) : (isCurrentTrack ? musicAccentColor : Color.white.opacity(0.64)))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     
                     Text("- " + song.artistName)
                         .font(.system(size: 9.8, weight: .regular))
-                        .foregroundStyle(isFailed ? Color.red.opacity(0.35) : Color.white.opacity(0.30))
+                        .foregroundStyle(isFailed ? failureColor.opacity(0.35) : Color.white.opacity(0.30))
                         .lineLimit(1)
                         .truncationMode(.tail)
+
+                    if isFailed {
+                        Text(failureLabel)
+                            .font(.system(size: 8.5, weight: .semibold))
+                            .foregroundStyle(failureColor.opacity(0.75))
+                    }
 
                     Spacer(minLength: 0)
                 }
@@ -644,7 +689,6 @@ struct NeteaseOnlinePreviewItem: View {
             }
             .buttonStyle(.plain)
             .frame(height: 17)
-            .help(isFailed ? "播放失败: \(musicViewModel.onlineSongFailureMessages[song.id] ?? "未知原因")" : "")
             .accessibilityLabel(isFailed ? "播放失败: \(musicViewModel.onlineSongFailureMessages[song.id] ?? "未知原因")" : "播放 \(song.name)")
 
             Button {
@@ -688,7 +732,6 @@ struct NeteaseOnlinePreviewItem: View {
                     Image(systemName: "exclamationmark.circle.fill")
                         .font(.system(size: 11, weight: .regular))
                         .foregroundColor(.red)
-                        .help("播放失败，无法下载")
                 } else {
                     Image(systemName: "arrow.down.circle")
                         .font(.system(size: 11, weight: .regular))
@@ -697,7 +740,7 @@ struct NeteaseOnlinePreviewItem: View {
             }
             .buttonStyle(.plain)
             .disabled(downloadManager.downloadingSongIDs.contains(song.id) || downloadManager.isDownloaded(song: song) || isFailed)
-            .help(isFailed ? "播放失败: \(musicViewModel.onlineSongFailureMessages[song.id] ?? "未知原因")" : (downloadManager.isDownloaded(song: song) ? "已下载" : ""))
+            .help(downloadManager.isDownloaded(song: song) ? "已下载" : "")
             .frame(width: 20, height: 17)
             .opacity(downloadButtonOpacity)
             .onHover { hovering in
@@ -719,7 +762,6 @@ struct NeteaseOnlinePreviewItem: View {
         }
         .padding(.horizontal, 4)
         .frame(maxWidth: .infinity)
-        .help(isFailed ? "播放失败: \(musicViewModel.onlineSongFailureMessages[song.id] ?? "未知原因")" : "")
     }
     
     private var downloadButtonOpacity: Double {

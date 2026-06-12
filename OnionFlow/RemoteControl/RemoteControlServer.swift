@@ -218,6 +218,11 @@ final class RemoteControlServer: ObservableObject {
         case ("GET", "/api/discovery/playlist"):
             let id = queryItems.first(where: { $0.name == "id" })?.value ?? ""
             let forceRefresh = queryItems.first(where: { $0.name == "refresh" })?.value == "true"
+            if forceRefresh, let viewModel = self.musicViewModel {
+                Task { @MainActor in
+                    viewModel.resetOnlineFailureState()
+                }
+            }
             let cacheKey = "playlist:\(id)"
             if !forceRefresh, let cachedItems = discoveryTrackCache[cacheKey] {
                 if let viewModel = self.musicViewModel {
@@ -299,6 +304,11 @@ final class RemoteControlServer: ObservableObject {
                     return
                 }
                 let forceRefresh = queryItems.first(where: { $0.name == "refresh" })?.value == "true"
+                if forceRefresh, let viewModel = self.musicViewModel {
+                    Task { @MainActor in
+                        viewModel.resetOnlineFailureState()
+                    }
+                }
                 let cacheKey = "simi:\(songId)"
                 if !forceRefresh, let cachedItems = self.discoveryTrackCache[cacheKey] {
                     if let viewModel = self.musicViewModel {
@@ -868,6 +878,17 @@ final class RemoteControlServer: ObservableObject {
             let audioOutputState = { lastRefresh: 0, isEditing: false };
             let bluetoothState = { lastRefresh: 0, isEditing: false };
 
+            function getFailureInfo(errorMsg) {
+                if (!errorMsg) return { label: ' [失败]', color: '#fc4747' };
+                if (errorMsg.includes('超时')) {
+                    return { label: ' [超时]', color: '#fc992e' };
+                } else if (errorMsg.includes('版权') || errorMsg.includes('VIP')) {
+                    return { label: ' [VIP/版权]', color: '#fc4747' };
+                } else {
+                    return { label: ' [失败]', color: '#fc4747' };
+                }
+            }
+
             function fuzzyMatch(pattern, str) {
                 let pIdx = 0, sIdx = 0;
                 const p = pattern.toLowerCase(), s = str.toLowerCase();
@@ -1108,14 +1129,31 @@ final class RemoteControlServer: ObservableObject {
                   button.style.textOverflow = 'ellipsis';
                   button.style.whiteSpace = 'nowrap';
                   const isFailed = item.isFailed;
-                  const titleColor = isFailed ? '#ff453a' : (item.isCurrent ? 'var(--accent)' : 'rgba(255,255,255,0.85)');
-                  const failIcon = isFailed ? '<span class="fail-icon" style="color: #ff453a; margin-right: 4px;">⚠️</span>' : '';
+                  let indexColor = 'rgba(255,255,255,0.3)';
+                  let indexOpacity = '1';
+                  let titleColor = item.isCurrent ? 'var(--accent)' : 'rgba(255,255,255,0.85)';
+                  let titleOpacity = '1';
+                  let artistColor = 'rgba(255,255,255,0.45)';
+                  let artistOpacity = '1';
+                  let failLabelHtml = '';
+
+                  if (isFailed) {
+                    const failColor = '#fc4747'; // Coral Red
+                    indexColor = failColor;
+                    indexOpacity = '0.48';
+                    titleColor = failColor;
+                    titleOpacity = '0.68';
+                    artistColor = failColor;
+                    artistOpacity = '0.35';
+                    failLabelHtml = '<span class="fail-label" style="color: ' + failColor + '; opacity: 0.75; font-size: 11px; font-weight: 600; margin-left: 4px;"> [未找到/不支持]</span>';
+                  }
+
                   const trackInfo = parseLocalTrack(item.title);
-                  const artistHtml = trackInfo.artist ? '<span style="color: rgba(255,255,255,0.45); font-size: 12.5px; font-weight: normal;"> - ' + escapeHTML(trackInfo.artist) + '</span>' : '';
-                  button.innerHTML = '<span class="track-index" style="color: ' + (isFailed ? '#ff453a' : 'rgba(255,255,255,0.3)') + '; font-size: 12.5px; margin-right: 6px; font-family: monospace; font-style: italic;">' + (item.index + 1) + '.</span>' +
-                    failIcon +
-                    '<span class="result-title" style="color: ' + titleColor + '; font-weight: 500;">' + escapeHTML(trackInfo.title) + '</span>' +
-                    artistHtml;
+                  const artistHtml = trackInfo.artist ? '<span style="color: ' + artistColor + '; opacity: ' + artistOpacity + '; font-size: 12.5px; font-weight: normal;"> - ' + escapeHTML(trackInfo.artist) + '</span>' : '';
+                  button.innerHTML = '<span class="track-index" style="color: ' + indexColor + '; opacity: ' + indexOpacity + '; font-size: 12.5px; margin-right: 6px; font-family: monospace; font-style: italic;">' + (item.index + 1) + '.</span>' +
+                    '<span class="result-title" style="color: ' + titleColor + '; opacity: ' + titleOpacity + '; font-weight: 500;">' + escapeHTML(trackInfo.title) + '</span>' +
+                    artistHtml +
+                    failLabelHtml;
                   button.onclick = () => call('/api/play?type=local&index=' + item.index);
 
                   const delBtn = document.createElement('button');
@@ -1186,37 +1224,70 @@ final class RemoteControlServer: ObservableObject {
                   if (trackBtn) {
                       trackBtn.classList.toggle('current', isCurrent);
                       const titleSpan = trackBtn.querySelector('.result-title');
-                      if (titleSpan) {
-                          titleSpan.style.color = isFailed ? '#ff453a' : (isCurrent ? 'var(--accent)' : 'rgba(255,255,255,0.85)');
-                      }
+                      const uploaderSpan = trackBtn.querySelector('.result-uploader');
+                      const idxSpan = trackBtn.querySelector('.track-index');
+                      let failLabelSpan = trackBtn.querySelector('.fail-label');
+                      
+                      // Remove warning icon ⚠️ if any was there
                       let failIconSpan = trackBtn.querySelector('.fail-icon');
+                      if (failIconSpan) failIconSpan.remove();
+
                       if (isFailed) {
-                          if (!failIconSpan) {
-                              failIconSpan = document.createElement('span');
-                              failIconSpan.className = 'fail-icon';
-                              failIconSpan.style.cssText = 'color: #ff453a; margin-right: 4px;';
-                              failIconSpan.textContent = '⚠️';
-                              const idxSpan = trackBtn.querySelector('.track-index');
-                              if (idxSpan) {
-                                  idxSpan.after(failIconSpan);
+                          const errorMsg = data.onlineSongFailureMessages && data.onlineSongFailureMessages[songId] ? data.onlineSongFailureMessages[songId] : '';
+                          const failInfo = getFailureInfo(errorMsg);
+                          
+                          if (titleSpan) {
+                              titleSpan.style.color = failInfo.color;
+                              titleSpan.style.opacity = '0.68';
+                          }
+                          if (uploaderSpan) {
+                              uploaderSpan.style.color = failInfo.color;
+                              uploaderSpan.style.opacity = '0.35';
+                          }
+                          if (idxSpan) {
+                              idxSpan.style.color = failInfo.color;
+                              idxSpan.style.opacity = '0.48';
+                          }
+                          
+                          if (!failLabelSpan) {
+                              failLabelSpan = document.createElement('span');
+                              failLabelSpan.className = 'fail-label';
+                              failLabelSpan.style.cssText = 'font-size: 11px; font-weight: 600; margin-left: 4px;';
+                              if (uploaderSpan) {
+                                  uploaderSpan.after(failLabelSpan);
                               } else {
-                                  trackBtn.prepend(failIconSpan);
+                                  trackBtn.appendChild(failLabelSpan);
                               }
                           }
-                          const errorMsg = data.onlineSongFailureMessages && data.onlineSongFailureMessages[songId] ? data.onlineSongFailureMessages[songId] : '播放失败';
-                          trackBtn.title = '播放失败: ' + errorMsg;
+                          failLabelSpan.style.color = failInfo.color;
+                          failLabelSpan.style.opacity = '0.75';
+                          failLabelSpan.textContent = failInfo.label;
+                          
+                          trackBtn.title = '';
                       } else {
-                          if (failIconSpan) {
-                              failIconSpan.remove();
+                          if (titleSpan) {
+                              titleSpan.style.color = isCurrent ? 'var(--accent)' : 'rgba(255,255,255,0.85)';
+                              titleSpan.style.opacity = '1';
                           }
-                          trackBtn.title = '播放 ' + (trackBtn.querySelector('.result-title')?.textContent || '');
+                          if (uploaderSpan) {
+                              uploaderSpan.style.color = 'rgba(255,255,255,0.45)';
+                              uploaderSpan.style.opacity = '1';
+                          }
+                          if (idxSpan) {
+                              idxSpan.style.color = 'rgba(255,255,255,0.3)';
+                              idxSpan.style.opacity = '1';
+                          }
+                          if (failLabelSpan) {
+                              failLabelSpan.remove();
+                          }
+                          trackBtn.title = '播放 ' + (titleSpan ? titleSpan.textContent : '');
                       }
                   }
                   const dlBtn = item.querySelector('.dl-btn');
                   if (dlBtn) {
                       if (isFailed) {
                           dlBtn.disabled = true;
-                          dlBtn.title = '播放失败，无法下载';
+                          dlBtn.title = '';
                       }
                   }
               });
@@ -1379,16 +1450,33 @@ final class RemoteControlServer: ObservableObject {
                 button.style.textOverflow = 'ellipsis';
                 button.style.whiteSpace = 'nowrap';
 
-                const titleColor = isFailed ? '#ff453a' : (isCurrent ? 'var(--accent)' : 'rgba(255,255,255,0.85)');
-                const failIcon = isFailed ? '<span class="fail-icon" style="color: #ff453a; margin-right: 4px;">⚠️</span>' : '';
+                let indexColor = 'rgba(255,255,255,0.3)';
+                let indexOpacity = '1';
+                let titleColor = isCurrent ? 'var(--accent)' : 'rgba(255,255,255,0.85)';
+                let titleOpacity = '1';
+                let uploaderColor = 'rgba(255,255,255,0.45)';
+                let uploaderOpacity = '1';
+                let failLabelHtml = '';
 
-                button.innerHTML = '<span class="track-index" style="color: rgba(255,255,255,0.3); font-size: 12.5px; margin-right: 6px; font-family: monospace; font-style: italic;">' + (index + 1) + '.</span>' +
-                  failIcon +
-                  '<span class="result-title" style="color: ' + titleColor + '; font-weight: 500;">' + escapeHTML(res.title) + '</span>' +
-                  '<span style="color: rgba(255,255,255,0.45); font-size: 12.5px; font-weight: normal;"> - ' + escapeHTML(res.uploader) + '</span>';
+                if (isFailed) {
+                  const errorMsg = (window.lastState && window.lastState.onlineSongFailureMessages && window.lastState.onlineSongFailureMessages[res.id]) || '';
+                  const failInfo = getFailureInfo(errorMsg);
+                  indexColor = failInfo.color;
+                  indexOpacity = '0.48';
+                  titleColor = failInfo.color;
+                  titleOpacity = '0.68';
+                  uploaderColor = failInfo.color;
+                  uploaderOpacity = '0.35';
+                  failLabelHtml = '<span class="fail-label" style="color: ' + failInfo.color + '; opacity: 0.75; font-size: 11px; font-weight: 600; margin-left: 4px;">' + failInfo.label + '</span>';
+                }
+
+                button.innerHTML = '<span class="track-index" style="color: ' + indexColor + '; opacity: ' + indexOpacity + '; font-size: 12.5px; margin-right: 6px; font-family: monospace; font-style: italic;">' + (index + 1) + '.</span>' +
+                  '<span class="result-title" style="color: ' + titleColor + '; opacity: ' + titleOpacity + '; font-weight: 500;">' + escapeHTML(res.title) + '</span>' +
+                  '<span class="result-uploader" style="color: ' + uploaderColor + '; opacity: ' + uploaderOpacity + '; font-size: 12.5px; font-weight: normal;"> - ' + escapeHTML(res.uploader) + '</span>' +
+                  failLabelHtml;
                 
-                if (isFailed && window.lastState.onlineSongFailureMessages && window.lastState.onlineSongFailureMessages[res.id]) {
-                  button.title = '播放失败: ' + window.lastState.onlineSongFailureMessages[res.id];
+                if (isFailed) {
+                  button.title = '';
                 } else {
                   button.title = '播放 ' + res.title;
                 }
@@ -1404,7 +1492,7 @@ final class RemoteControlServer: ObservableObject {
                   btn.style.color = '#ff453a';
                   btn.style.borderColor = 'rgba(255,69,58,0.2)';
                   btn.style.cursor = 'default';
-                  btn.title = '播放失败，无法下载';
+                  btn.title = '';
                   btn.innerHTML = '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="#ff453a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
                 } else {
                   btn.onclick = () => downloadSong(res.url, btn.id, res.title + ' - ' + res.uploader);

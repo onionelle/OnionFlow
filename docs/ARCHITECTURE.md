@@ -311,7 +311,7 @@ Settings 子系统职责：
 7. App 启动时，`MusicPlayerViewModel` 从 `MusicPlaylistStore` 恢复音频文件 URL、只读 security-scoped bookmark、当前索引、播放模式和当前曲目进度；恢复时过滤已不存在或不再是音频的文件，并将保存的原始 `currentIndex` 映射到过滤后的有效列表
 8. 启动恢复会加载当前曲目，seek 到上次位置并继续播放；旧 `playlist.json` 缺少 `currentTrackProgress` 时按 0 处理
 9. 如果当前没有有效播放列表，ViewModel 设置 `currentIndex` 并调用 `MusicPlayerController.load(url:)` 播放新添加的第一首
-10. `MusicPlayerController` 对本地 URL 开启 security-scoped access，使用 `AVPlayerItem` 加载文件，并安装进度 / 播放开始 / 播放结束 / 失败 / stall 监听
+10. `MusicPlayerController` 对本地 URL 开启 security-scoped access，使用 `AVPlayerItem` 加载文件，并安装进度 / 播放开始 / 播放结束 / 失败 / stall 监听。若加载或播放失败，当前曲目 URL 会被添加进 `failedLocalURLs` 中，并在 Native 播放列表与遥控端网页上呈现为珊瑚红并显示 `[未找到/不支持]` 标签；悬浮 Tooltip 被精简
 11. 加载成功后 `MusicPlayerViewModel` 保存 `MusicTrack`，并切换到 `.playing`
 12. 播放进度通过 controller 回调更新 `currentTime`
 13. 自然播放结束后，ViewModel 按 `MusicPlaybackMode` 决定顺序下一首、列表循环或随机播放
@@ -326,8 +326,8 @@ Settings 子系统职责：
 5. 在线歌曲播放成功后仍生成 `MusicTrack`，供歌词匹配、进度更新、遥控器状态和 Mascot music 状态复用；ViewModel 会等 AVPlayer 真实开始播放或进度推进后再切到 `.playing`
 6. 如果开启“边听边存”，`OnlineMusicService` 触发 `OnlineDownloadManager` 后台下载；若用户同时开启目录自动监听，`MusicFolderMonitor` 可把下载目录中新出现的音频追加到本地播放列表
 7. 在线模式自然结束后同样走 `MusicPlaybackMode`，单曲循环重播当前在线曲目，列表循环 / 随机 / 顺序模式按 `activeOnlinePlaylist` 推进
-8. 在线播放启动超过约 6 秒仍未推进，或 AVPlayer 回传失败 / 早期 stall 后仍无进展时，ViewModel 会标记当前线上歌曲失败并按现有失败跳过逻辑处理
-9. App 退出后，`onlinePlaylist`、`activeOnlinePlaylist`、`cachedOnlinePlaylists`、`failedOnlineSongIDs` 和 `onlineSongFailureMessages` 随进程释放；下次启动重新拉取线上发现列表，并初始化失败状态
+8. 在线播放启动超过约 8 秒仍未推进，或 AVPlayer 回传失败 / 早期 stall 后仍无进展时，ViewModel 会标记当前线上歌曲失败并按现有失败跳过逻辑处理。失败的歌曲会根据具体错误细分为 `[超时]` (橘黄色)、`[VIP/版权]` (珊瑚红)、`[失败]` (珊瑚红)，在发现列表及网页遥控端上同步显示 inline 标签；移除了悬浮 Tooltip 提示
+9. App 退出后，`onlinePlaylist`、`activeOnlinePlaylist`、`cachedOnlinePlaylists`、`failedOnlineSongIDs` 和 `onlineSongFailureMessages` 随进程释放；下次启动重新拉取线上发现列表，并初始化失败状态。刷新列表（包括网页遥控端刷新）时触发 `resetOnlineFailureState()`
 
 ### 歌词流
 

@@ -44,6 +44,10 @@ struct MusicPlaylistPreviewItem: View {
         currentIndex == index
     }
 
+    private var failureColor: Color {
+        Color(red: 0.98, green: 0.28, blue: 0.28) // Coral Red
+    }
+
     private var title: String {
         url.deletingPathExtension().lastPathComponent
     }
@@ -78,7 +82,7 @@ struct MusicPlaylistPreviewItem: View {
                             Text("\(index + 1)")
                                 .font(.system(size: 9.2, weight: .regular, design: .monospaced))
                                 .italic()
-                                .foregroundStyle(isFailed ? Color.red.opacity(0.48) : Color.white.opacity(0.30))
+                                .foregroundStyle(isFailed ? failureColor.opacity(0.48) : Color.white.opacity(0.30))
                         }
                     }
                     .frame(width: 20, alignment: .trailing)
@@ -86,16 +90,22 @@ struct MusicPlaylistPreviewItem: View {
                     let trackInfo = parsedTrackInfo
                     Text(trackInfo.title)
                         .font(.system(size: 9.8, weight: .regular))
-                        .foregroundStyle(isFailed ? Color.red.opacity(0.68) : (isCurrentTrack ? musicAccentColor : Color.white.opacity(0.64)))
+                        .foregroundStyle(isFailed ? failureColor.opacity(0.68) : (isCurrentTrack ? musicAccentColor : Color.white.opacity(0.64)))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     
                     if let artist = trackInfo.artist {
                         Text("- " + artist)
                             .font(.system(size: 9.8, weight: .regular))
-                            .foregroundStyle(isFailed ? Color.red.opacity(0.35) : Color.white.opacity(0.30))
+                            .foregroundStyle(isFailed ? failureColor.opacity(0.35) : Color.white.opacity(0.30))
                             .lineLimit(1)
                             .truncationMode(.tail)
+                    }
+
+                    if isFailed {
+                        Text(" [未找到/不支持]")
+                            .font(.system(size: 8.5, weight: .semibold))
+                            .foregroundStyle(failureColor.opacity(0.75))
                     }
 
                     Spacer(minLength: 0)
@@ -138,7 +148,7 @@ struct MusicPlaylistPreviewItem: View {
                 if isFailed {
                     Image(systemName: "exclamationmark.circle.fill")
                         .font(.system(size: 9, weight: .regular))
-                        .foregroundColor(.red)
+                        .foregroundColor(failureColor)
                         .opacity(isHovered || isDeleteHovered ? 0 : 1)
                 }
             }
@@ -164,7 +174,6 @@ struct MusicPlaylistPreviewItem: View {
                 NSCursor.arrow.set()
             }
         }
-        .help(isFailed ? "无法播放，文件已移动或格式不支持" : "")
         .padding(.horizontal, 4)
         .frame(maxWidth: .infinity)
     }
