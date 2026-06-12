@@ -3,6 +3,8 @@
 
 DerivedData/
 build/
+Build/
+build_derived/
 
 *.xcuserstate
 *.xcbkptlist
@@ -15,3 +17,9 @@ xcuserdata/
 # AI tool configs
 .claude/
 .codex/
+
+# Temp scripts
+*.py
+
+# Release artifacts
+*.zip

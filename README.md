@@ -1,14 +1,16 @@
-# NookFlow
+# Onion Flow
 
-NookFlow 是一个使用 `SwiftUI` + `AppKit` 开发的 macOS 原生桌面应用，目标是在屏幕顶部中央提供一个类似 MacBook 刘海 / Dynamic Island 的交互式状态面板。
+**Onion Flow**（简称 **Onion**）是一个使用 `SwiftUI` + `AppKit` 开发的 macOS 原生桌面应用，目标是在屏幕顶部中央提供一个类似 MacBook 刘海 / Dynamic Island 的交互式状态面板。
 
-当前项目已完成本地音乐 mini player 播放列表阶段，当前重点验证以下能力：
+当前项目已完成音乐 mini player、线上发现、歌词、局域网遥控、快捷启动和临时暂存等基础接入，当前重点验证以下能力：
 
 - 作为 macOS menu bar app 启动
 - 在屏幕顶部中央显示一个 floating panel
 - 默认显示 compact island
 - 点击后展开为更大的信息面板
-- 使用本地音乐文件、目录、拖拽导入和持久化播放列表驱动 expanded mini player
+- 使用本地音乐文件、目录、拖拽导入、持久化播放列表和线上发现驱动 expanded mini player
+- 提供无配对的局域网网页遥控器，用手机或浏览器控制播放
+- 在 expanded 底部临时收集文件 / 文件夹并原生拖出使用
 
 ## 文档索引
 
@@ -23,10 +25,11 @@ NookFlow 是一个使用 `SwiftUI` + `AppKit` 开发的 macOS 原生桌面应用
 - 顶部 floating panel
 - 基础贴顶定位
 - compact / expanded 切换
-- compact Mascot / chevron / 右侧音乐活动指示，expanded 恢复工具按钮布局
-- 自定义 notch-style compact 外轮廓
+- compact Mascot / 右侧音乐活动指示，expanded 恢复工具按钮布局
+- 自定义 notch-style island 外轮廓，compact / expanded 共用 `NotchIslandShape`
 - expanded mini player 布局
-- 快速启动 App 面板：支持外部拖入、按落点插入、拖动重排和持久化顺序，最多 9 个
+- 快速启动 App 面板：空态显示引导文案；已有 App 或拖入悬停时显示 10 个可空槽位，支持外部放置 / 覆盖、内部移动 / 交换与持久化布局
+- 临时暂存：以 Quick Look 预览缩略图（不可预览时回退系统图标）在上、原始名称在下的横向图标架展示文件 / 文件夹引用，支持原生拖出，不移动或复制源项目
 - 深色风格黑色面板
 - 两阶段展开动画：先扩 AppKit 窗口，再展开 SwiftUI 壳体
 - 内部点击收起完成后窗口缩回 compact 尺寸
@@ -35,16 +38,23 @@ NookFlow 是一个使用 `SwiftUI` + `AppKit` 开发的 macOS 原生桌面应用
 - shoulder 肩部半径跟随展开 / 收起动画平滑过渡（compact 5 → expanded 10）
 - NotchIslandShape 通过 AnimatablePair 实现形状参数插值动画
 - Mascot 角色动画系统（Canvas + TimelineView，idle / working / music 三种状态，7 个角色）
-- Mascot 设置页（macOS 原生面板风格，纯角色选择器）
-- `@AppStorage` 持久化：mascotKind；ContentView 仍保留 mascotEnabled / mascotSize 读取兼容
-- 右侧工具按钮组：展开后显示静音、打开设置、退出 NookFlow
+- Onion 设置页（角色、收起态频谱风格、星云氛围背景、动态粒子与联网歌词开关）
+- `@AppStorage` / UserDefaults 持久化：角色、频谱风格、默认输出设备、氛围背景、粒子效果、联网歌词、播放列表、快捷启动、临时暂存、遥控器、自动监听和网易云相关偏好；线上发现歌曲列表及其播放失败状态不持久化
+- 右侧工具按钮组：展开后显示静音、打开设置、退出 Onion
 - 本地音乐 mini player：混合添加文件 / 目录、拖拽添加文件 / 文件夹、播放、暂停、上一首 / 下一首、顺序 / 单曲循环 / 列表循环 / 随机模式、自动下一首、播放列表预览、点击播放、删除单项、清空列表、进度和时间显示
+- 线上音乐发现：网易云榜单、搜索、个人歌单（Cookie）、相似推荐、在线歌曲播放，以及可选边听边存到本地下载目录
+- 线上发现列表和播放失败状态只做当前 App 会话内存缓存，用于切换榜单 / 歌单时减少重复请求和提示失败歌曲；退出 App 或刷新列表后清空，下次启动重新获取
+- 音乐目录自动监听：可选监听指定目录（默认路径 `~/Music`），发现新增音频后追加到本地播放列表
+- 局域网网页遥控器：启动后监听 `17777` 端口，菜单栏显示访问地址；手机或浏览器可控制播放 / 暂停、上一首 / 下一首、音量、默认输出设备，通过“歌词 / 歌曲列表”分栏查看歌词和播放列表，并可让运行 Onion 的 Mac 进入睡眠
 - 播放列表轻量持久化：保存音频文件 URL、只读 security-scoped bookmark、当前选中索引、播放模式和上次播放进度；启动后恢复列表并 seek 到上次位置继续播放
+- 歌词：当前曲目加载、expanded 面板出现 / 布局切换、歌词标签或遥控状态读取时优先读取本地 `.lrc` / 已确认缓存；可手动选择本地歌词文件；用户开启“联网匹配歌词”后才搜索在线候选并缓存确认结果
+- 设置页：选择角色、收起态频谱风格与 island 氛围背景，提供“联网匹配歌词”和“动态粒子”开关
+- expanded 底部提供播放列表 / 歌词、快捷启动和临时暂存的快捷布局开关
 
 ## 运行方式
 
 1. 用 Xcode 打开工程。
-2. 选择 `NookFlow` scheme。
+2. 选择 `OnionFlow` scheme。
 3. 直接运行。
 4. 运行后应用会出现在菜单栏，并在屏幕顶部显示 island 面板。
 
@@ -53,17 +63,27 @@ NookFlow 是一个使用 `SwiftUI` + `AppKit` 开发的 macOS 原生桌面应用
 - 默认状态显示空 compact island
 - 点击 compact island 可展开
 - 再次点击 compact 顶栏或点击 expanded 空白区域可收起；点击桌面或其它 App 不会收起
-- 收起态左侧显示 Mascot 角色（收起 idle，展开 working），中间保留展开箭头，右侧显示音乐活动指示
+- 收起态左侧显示 Mascot 角色（收起 idle，展开 working），右侧显示音乐活动指示
 - 展开后右侧恢复静音 / 设置 / 退出三个工具按钮；播放中 Mascot 使用 music 状态和 4 到 6 个环绕音符特效
-- expanded 状态显示 mini player：曲名、状态、播放 / 暂停、添加歌曲、播放模式、上一首 / 下一首、播放列表区域、进度条、当前时间 / 总时长
+- expanded 状态显示 mini player：曲名、状态、播放 / 暂停、添加歌曲、播放模式、上一首 / 下一首、本地曲库 / 线上发现 / 歌词区域、进度条、当前时间 / 总时长；关闭播放列表 / 歌词区域后进入更紧凑的播放控制形态，并在顶部 overlay 显示当前歌词单行
 - 未添加歌曲时，expanded 仍保留播放列表区域并显示 0 首状态
 - 播放列表区域支持拖拽本地音频文件或文件夹添加到当前列表
+- 临时暂存区域支持拖入任意文件或文件夹作为当前会话引用；默认拖入为移动、按 `Option` 拖入为复制；支持单击、`Command` / `Shift`、框选多选后拖出到 Finder 或其它可接收文件的 App，移 / 拷混合选择会提示分开拖出
 - 播放列表行支持点击播放、删除、序号显示、蓝色低透明 hover / 选中背景，并显式使用箭头光标
-- 右侧工具按钮组仅在展开后显示，包含：静音状态切换、打开设置、退出 NookFlow
-- 菜单栏 "Settings..." 打开 Mascot 角色选择窗口
-- 设置窗口支持切换角色
+- 右侧工具按钮组仅在展开后显示，包含：静音 / 悬停音量调节、打开设置、退出 Onion
+- 菜单栏 "Settings..." 打开 Onion 设置窗口
+- 菜单栏显示局域网遥控器地址，可在同一局域网手机或浏览器中打开
+- 遥控网页会随播放进度显示当前歌词及前后几行；读取状态会触发歌词检查，联网仍受“联网匹配歌词”开关限制；若在线歌词需要候选确认，仍需回到 Mac 端歌词页选择
+- 遥控网页的“让 Mac mini 睡眠”会让当前运行 Onion 的 Mac 进入睡眠；睡眠后 Onion 网页服务会停止响应，唤醒需要依赖 macOS 网络唤醒或外部 Wake-on-LAN
+- 设置窗口支持切换角色、频谱风格、氛围背景、动态粒子与在线歌词开关；无边框窗口仅标题栏区域可拖动
+
+## 命名说明
+
+- 对外正式名称为 `Onion Flow`，紧凑界面与菜单栏使用简称 `Onion`。
+- 工程、target / scheme、源码目录、Bundle ID 和 Application Support 数据目录统一使用 `OnionFlow` 标识。
+- 因 Bundle ID 已从旧开发版本调整为 `larva.OnionFlow`，macOS Sandbox 会创建新的应用容器，旧版本的偏好、播放列表和歌词缓存不会自动继承。
 
 ## 下一步建议
 
 - 继续保持顶部贴边、单层 island 壳体和展开 / 收起动画稳定
-- Music 后续阶段再评估 metadata、专辑封面、系统媒体键或更完整资料库能力
+- Music 后续阶段再评估专辑封面、系统媒体键、更完整资料库或进一步拆分线上音乐状态
