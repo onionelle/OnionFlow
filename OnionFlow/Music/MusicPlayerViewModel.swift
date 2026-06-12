@@ -60,6 +60,7 @@ final class MusicPlayerViewModel: ObservableObject {
     private var loadTask: Task<Void, Never>?
     private var loadGeneration = 0
     private var autoSkipTask: Task<Void, Never>?
+    private var playbackStartWatchdogTask: Task<Void, Never>?
     convenience init(restoresPlaylistOnInit: Bool = true) {
         self.init(
             filePicker: MusicFilePicker(),
@@ -89,6 +90,15 @@ final class MusicPlayerViewModel: ObservableObject {
         }
         self.playerController.onPlaybackEnded = { [weak self] in
             self?.handlePlaybackEnded()
+        }
+        self.playerController.onPlaybackStarted = { [weak self] in
+            self?.handlePlaybackStarted()
+        }
+        self.playerController.onPlaybackFailure = { [weak self] message in
+            self?.handlePlaybackFailure(message: message)
+        }
+        self.playerController.onPlaybackStalled = { [weak self] in
+            self?.handlePlaybackStalled()
         }
         self.playerController.onIsMutedChange = { [weak self] muted in
             self?.isMuted = muted
@@ -411,6 +421,7 @@ final class MusicPlayerViewModel: ObservableObject {
 
     private func loadAndPlayOnlineSong(at index: Int, resumeFrom progress: TimeInterval? = nil, shouldPlay: Bool = true) {
         autoSkipTask?.cancel()
+        playbackStartWatchdogTask?.cancel()
 
         guard activeOnlinePlaylist.indices.contains(index) else { return }
         let song = activeOnlinePlaylist[index]
@@ -610,6 +621,7 @@ final class MusicPlayerViewModel: ObservableObject {
     }
     private func loadFile(at url: URL, resumeFrom progress: TimeInterval? = nil, shouldPlay: Bool = true, onlineSong: NeteaseSong? = nil) {
         autoSkipTask?.cancel()
+        playbackStartWatchdogTask?.cancel()
 
         loadTask?.cancel()
         loadGeneration += 1
@@ -643,6 +655,7 @@ final class MusicPlayerViewModel: ObservableObject {
         switch state {
         case .playing:
             playerController.pause()
+            playbackStartWatchdogTask?.cancel()
             saveCurrentProgress()
             state = .paused
         case .paused:
@@ -658,6 +671,7 @@ final class MusicPlayerViewModel: ObservableObject {
     }
     private func clearCurrentPlayback() {
         autoSkipTask?.cancel()
+        playbackStartWatchdogTask?.cancel()
 
         loadTask?.cancel()
         loadGeneration += 1
@@ -722,19 +736,29 @@ final class MusicPlayerViewModel: ObservableObject {
             currentTime = 0
             if let progress {
                 playerController.seek(to: progress) { [weak self] _ in
+                    guard let self, generation == self.loadGeneration else { return }
                     if shouldPlay {
-                        self?.playerController.play()
-                        self?.state = .playing
+                        if let onlineSong {
+                            self.startOnlinePlaybackWatchdog(for: onlineSong, generation: generation, baselineTime: progress)
+                            self.playerController.play()
+                            self.state = .loading
+                        } else {
+                            self.playerController.play()
+                            self.state = .playing
+                        }
                     } else {
-                        self?.state = .paused
+                        self.state = .paused
                     }
                 }
                 currentTime = progress
                 currentTrackProgress = progress
             } else {
                 if shouldPlay {
+                    if let onlineSong {
+                        startOnlinePlaybackWatchdog(for: onlineSong, generation: generation, baselineTime: 0)
+                    }
                     playerController.play()
-                    state = .playing
+                    state = onlineSong == nil ? .playing : .loading
                 } else {
                     state = .paused
                 }
@@ -755,6 +779,7 @@ final class MusicPlayerViewModel: ObservableObject {
         }
     }
     private func handlePlaybackEnded() {
+        playbackStartWatchdogTask?.cancel()
         // 自然结束后由 ViewModel 根据播放列表和模式决定下一步，Controller 只负责发结束事件。
         if hasPlaylist {
             if playbackMode == .singleLoop {
@@ -771,6 +796,31 @@ final class MusicPlayerViewModel: ObservableObject {
         currentTrackProgress = 0
         state = .paused
         persistPlaylist(syncCurrentProgress: false)
+    }
+    private func handlePlaybackStarted() {
+        if playlistMode == .online, currentTime <= 0.15 {
+            return
+        }
+        playbackStartWatchdogTask?.cancel()
+        playbackStartWatchdogTask = nil
+        guard currentTrack != nil else { return }
+        if state == .loading {
+            state = .playing
+        }
+    }
+    private func handlePlaybackFailure(message: String) {
+        failCurrentPlayback(message: message)
+    }
+    private func handlePlaybackStalled() {
+        guard playlistMode == .online, currentTime <= 0.2 else { return }
+        guard let currentOnlineIndex,
+              activeOnlinePlaylist.indices.contains(currentOnlineIndex) else { return }
+        startOnlinePlaybackWatchdog(
+            for: activeOnlinePlaylist[currentOnlineIndex],
+            generation: loadGeneration,
+            baselineTime: currentTime,
+            timeoutNanoseconds: 6_000_000_000
+        )
     }
     private func restorePlaylist() {
         guard let snapshot = playlistStore.load() else { return }
@@ -846,6 +896,7 @@ final class MusicPlayerViewModel: ObservableObject {
     }
 
     private func setFailedState(message: String) {
+        playbackStartWatchdogTask?.cancel()
         self.state = .failed(message)
         self.currentTrack = nil
         self.lyricsViewModel.clear()
@@ -870,6 +921,58 @@ final class MusicPlayerViewModel: ObservableObject {
             }
         }
     }
+    private func startOnlinePlaybackWatchdog(
+        for song: NeteaseSong,
+        generation: Int,
+        baselineTime: TimeInterval,
+        timeoutNanoseconds: UInt64 = 6_000_000_000
+    ) {
+        playbackStartWatchdogTask?.cancel()
+        playbackStartWatchdogTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: timeoutNanoseconds)
+                guard let self, !Task.isCancelled else { return }
+                guard generation == self.loadGeneration else { return }
+                guard self.playlistMode == .online,
+                      let currentOnlineIndex = self.currentOnlineIndex,
+                      self.activeOnlinePlaylist.indices.contains(currentOnlineIndex),
+                      self.activeOnlinePlaylist[currentOnlineIndex].id == song.id else { return }
+                guard self.state == .loading || self.state == .playing else { return }
+                if self.currentTime > baselineTime + 0.25 {
+                    self.handlePlaybackStarted()
+                    return
+                }
+                self.failCurrentPlayback(message: "播放启动超时")
+            } catch {
+                // 新的切歌或用户操作会取消旧 watchdog。
+            }
+        }
+    }
+    private func failCurrentPlayback(message: String) {
+        if case .failed = state { return }
+        playbackStartWatchdogTask?.cancel()
+
+        if playlistMode == .online,
+           let currentOnlineIndex,
+           activeOnlinePlaylist.indices.contains(currentOnlineIndex) {
+            let song = activeOnlinePlaylist[currentOnlineIndex]
+            markOnlineSongFailed(id: song.id, message: message)
+            setFailedState(message: "无法播放，\(message)")
+            return
+        }
+
+        if playlistMode == .local,
+           let currentIndex,
+           playlist.indices.contains(currentIndex) {
+            let url = playlist[currentIndex]
+            failedLocalURLs.insert(url)
+            persistPlaylist(syncCurrentProgress: false)
+            setFailedState(message: "无法播放，文件已移动或格式不支持")
+            return
+        }
+
+        setFailedState(message: "无法播放，\(message)")
+    }
     private func restartCurrentTrack() {
         switch playlistMode {
         case .local:
@@ -878,10 +981,15 @@ final class MusicPlayerViewModel: ObservableObject {
             guard let currentOnlineIndex, activeOnlinePlaylist.indices.contains(currentOnlineIndex) else { return }
         }
         playerController.pauseAndResetToBeginning()
+        if playlistMode == .online,
+           let currentOnlineIndex,
+           activeOnlinePlaylist.indices.contains(currentOnlineIndex) {
+            startOnlinePlaybackWatchdog(for: activeOnlinePlaylist[currentOnlineIndex], generation: loadGeneration, baselineTime: 0)
+        }
         playerController.play()
         currentTime = 0
         currentTrackProgress = 0
-        state = .playing
+        state = playlistMode == .online ? .loading : .playing
         if playlistMode == .local {
             persistPlaylist(syncCurrentProgress: false)
         }

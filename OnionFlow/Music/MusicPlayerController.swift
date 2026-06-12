@@ -21,6 +21,11 @@ final class MusicPlayerController {
     var onIsMutedChange: ((Bool) -> Void)?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
+    private var failedObserver: NSObjectProtocol?
+    private var stalledObserver: NSObjectProtocol?
+    private var itemStatusObservation: NSKeyValueObservation?
+    private var timeControlObservation: NSKeyValueObservation?
+    private var hasReportedPlaybackStart = false
     // NSOpenPanel 返回的沙盒外文件需要在播放期间保持 security-scoped access。
     private var securityScopedURL: URL?
     private var isAccessingSecurityScopedResource = false
@@ -28,6 +33,9 @@ final class MusicPlayerController {
     private var loadRequestID = 0
     var onProgressChange: ((TimeInterval) -> Void)?
     var onPlaybackEnded: (() -> Void)?
+    var onPlaybackStarted: (() -> Void)?
+    var onPlaybackFailure: ((String) -> Void)?
+    var onPlaybackStalled: (() -> Void)?
     func load(url: URL, predefinedTitle: String? = nil, predefinedArtist: String? = nil, predefinedDuration: TimeInterval? = nil) async throws -> MusicTrack {
         loadRequestID += 1
         let requestID = loadRequestID
@@ -73,7 +81,7 @@ final class MusicPlayerController {
             let item = AVPlayerItem(asset: asset)
             player.replaceCurrentItem(with: item)
             installTimeObserver()
-            installEndObserver(for: item)
+            installPlaybackObservers(for: item)
             return MusicTrack(
                 url: url,
                 duration: duration,
@@ -125,11 +133,44 @@ final class MusicPlayerController {
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             // AVPlayer 回调不继承 MainActor 隔离，回写 UI 状态前显式切回主 actor。
             Task { @MainActor [weak self] in
-                self?.onProgressChange?(time.seconds)
+                guard let self else { return }
+                let seconds = time.seconds
+                self.onProgressChange?(seconds)
+                if seconds.isFinite, seconds > 0.15 {
+                    self.reportPlaybackStartedIfNeeded()
+                }
             }
         }
     }
-    private func installEndObserver(for item: AVPlayerItem) {
+    private func installPlaybackObservers(for item: AVPlayerItem) {
+        hasReportedPlaybackStart = false
+        itemStatusObservation = item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
+            let status = observedItem.status
+            let failureMessage = observedItem.error?.localizedDescription
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                switch status {
+                case .readyToPlay:
+                    break
+                case .failed:
+                    self.reportPlaybackFailure(failureMessage ?? "播放链接不可用")
+                case .unknown:
+                    break
+                @unknown default:
+                    break
+                }
+            }
+        }
+        timeControlObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] observedPlayer, _ in
+            let currentSeconds = observedPlayer.currentTime().seconds
+            let isPlayingWithProgress = observedPlayer.timeControlStatus == .playing && currentSeconds.isFinite && currentSeconds > 0.15
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if isPlayingWithProgress {
+                    self.reportPlaybackStartedIfNeeded()
+                }
+            }
+        }
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: item,
@@ -139,16 +180,55 @@ final class MusicPlayerController {
                 self?.onPlaybackEnded?()
             }
         }
+        failedObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] notification in
+            let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+            Task { @MainActor [weak self] in
+                self?.reportPlaybackFailure(error?.localizedDescription ?? "播放中断")
+            }
+        }
+        stalledObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemPlaybackStalled,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.onPlaybackStalled?()
+            }
+        }
     }
     private func removeObservers() {
         if let timeObserver {
             player.removeTimeObserver(timeObserver)
             self.timeObserver = nil
         }
+        itemStatusObservation?.invalidate()
+        itemStatusObservation = nil
+        timeControlObservation?.invalidate()
+        timeControlObservation = nil
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
             self.endObserver = nil
         }
+        if let failedObserver {
+            NotificationCenter.default.removeObserver(failedObserver)
+            self.failedObserver = nil
+        }
+        if let stalledObserver {
+            NotificationCenter.default.removeObserver(stalledObserver)
+            self.stalledObserver = nil
+        }
+    }
+    private func reportPlaybackStartedIfNeeded() {
+        guard !hasReportedPlaybackStart else { return }
+        hasReportedPlaybackStart = true
+        onPlaybackStarted?()
+    }
+    private func reportPlaybackFailure(_ message: String) {
+        onPlaybackFailure?(message)
     }
     private func beginSecurityScopedAccess(for url: URL) {
         let didStartAccess = url.startAccessingSecurityScopedResource()
@@ -168,6 +248,7 @@ final class MusicPlayerController {
         }
         player.pause()
         removeObservers()
+        hasReportedPlaybackStart = false
         player.replaceCurrentItem(with: nil)
         endSecurityScopedAccess()
     }
@@ -175,8 +256,16 @@ final class MusicPlayerController {
         if let timeObserver {
             player.removeTimeObserver(timeObserver)
         }
+        itemStatusObservation?.invalidate()
+        timeControlObservation?.invalidate()
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
+        }
+        if let failedObserver {
+            NotificationCenter.default.removeObserver(failedObserver)
+        }
+        if let stalledObserver {
+            NotificationCenter.default.removeObserver(stalledObserver)
         }
         if isAccessingSecurityScopedResource {
             Self.stopSecurityScopedAccess(for: securityScopedURL)

@@ -204,7 +204,7 @@ Music 子系统职责：
 - `MusicTrack.swift` — 单曲模型，保存本地 URL、时长及用于歌词匹配的标题 / 歌手；metadata 缺失时按文件名回退
 - `MusicPlayerState.swift` — 播放状态枚举，不保存曲目信息
 - `MusicFilePicker.swift` — 使用 `NSOpenPanel` 混合选择本地音频文件和音乐目录
-- `MusicPlayerController.swift` — 唯一直接使用 `AVPlayer` 的底层播放控制器，并负责 security-scoped 文件访问生命周期
+- `MusicPlayerController.swift` — 唯一直接使用 `AVPlayer` 的底层播放控制器，负责 security-scoped 文件访问生命周期，并把播放开始、结束、失败与 stall 状态回传给 ViewModel
 - `MusicPlayerViewModel.swift` — 音乐状态、本地 / 线上播放模式、播放列表状态和动作入口；退出时保存当前播放进度
 - `OnlineMusicService.swift` — 网易云登录状态、用户歌单、在线歌曲播放 URL 和边听边存触发的服务边界
 - `NeteaseAPIClient.swift` — 网易云榜单、搜索、歌单、相似歌曲、播放 URL 和账号状态请求
@@ -311,7 +311,7 @@ Settings 子系统职责：
 7. App 启动时，`MusicPlayerViewModel` 从 `MusicPlaylistStore` 恢复音频文件 URL、只读 security-scoped bookmark、当前索引、播放模式和当前曲目进度；恢复时过滤已不存在或不再是音频的文件，并将保存的原始 `currentIndex` 映射到过滤后的有效列表
 8. 启动恢复会加载当前曲目，seek 到上次位置并继续播放；旧 `playlist.json` 缺少 `currentTrackProgress` 时按 0 处理
 9. 如果当前没有有效播放列表，ViewModel 设置 `currentIndex` 并调用 `MusicPlayerController.load(url:)` 播放新添加的第一首
-10. `MusicPlayerController` 对本地 URL 开启 security-scoped access，使用 `AVPlayerItem` 加载文件，并安装进度 / 播放结束监听
+10. `MusicPlayerController` 对本地 URL 开启 security-scoped access，使用 `AVPlayerItem` 加载文件，并安装进度 / 播放开始 / 播放结束 / 失败 / stall 监听
 11. 加载成功后 `MusicPlayerViewModel` 保存 `MusicTrack`，并切换到 `.playing`
 12. 播放进度通过 controller 回调更新 `currentTime`
 13. 自然播放结束后，ViewModel 按 `MusicPlaybackMode` 决定顺序下一首、列表循环或随机播放
@@ -323,10 +323,11 @@ Settings 子系统职责：
 2. 线上列表数据由 `NeteaseAPIClient` 通过 `URLSession` 获取，并以 `NeteaseSong` / `NeteaseUserPlaylist` 等模型传回 UI；`MusicPlayerViewModel` 只做当前 App 会话内存缓存，刷新列表时重置在线播放失败标记
 3. 用户点击在线歌曲后，`MusicPlayerViewModel` 切到 `.online` 模式，保存本地播放记忆，并把当前线上列表复制为 `activeOnlinePlaylist`
 4. `MusicPlayerViewModel` 调用 `OnlineMusicService.streamURL(for:)` 获取真实播放 URL，再委托 `MusicPlayerController` 通过 `AVPlayer` 播放该 URL
-5. 在线歌曲播放成功后仍生成 `MusicTrack`，供歌词匹配、进度更新、遥控器状态和 Mascot music 状态复用
+5. 在线歌曲播放成功后仍生成 `MusicTrack`，供歌词匹配、进度更新、遥控器状态和 Mascot music 状态复用；ViewModel 会等 AVPlayer 真实开始播放或进度推进后再切到 `.playing`
 6. 如果开启“边听边存”，`OnlineMusicService` 触发 `OnlineDownloadManager` 后台下载；若用户同时开启目录自动监听，`MusicFolderMonitor` 可把下载目录中新出现的音频追加到本地播放列表
 7. 在线模式自然结束后同样走 `MusicPlaybackMode`，单曲循环重播当前在线曲目，列表循环 / 随机 / 顺序模式按 `activeOnlinePlaylist` 推进
-8. App 退出后，`onlinePlaylist`、`activeOnlinePlaylist`、`cachedOnlinePlaylists`、`failedOnlineSongIDs` 和 `onlineSongFailureMessages` 随进程释放；下次启动重新拉取线上发现列表，并初始化失败状态
+8. 在线播放启动超过约 6 秒仍未推进，或 AVPlayer 回传失败 / 早期 stall 后仍无进展时，ViewModel 会标记当前线上歌曲失败并按现有失败跳过逻辑处理
+9. App 退出后，`onlinePlaylist`、`activeOnlinePlaylist`、`cachedOnlinePlaylists`、`failedOnlineSongIDs` 和 `onlineSongFailureMessages` 随进程释放；下次启动重新拉取线上发现列表，并初始化失败状态
 
 ### 歌词流
 
