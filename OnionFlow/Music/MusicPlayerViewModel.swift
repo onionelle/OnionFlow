@@ -11,8 +11,16 @@ final class MusicPlayerViewModel: ObservableObject {
     }
 
     @Published var playlistMode: PlaylistMode = .local
-    @Published private(set) var state: MusicPlayerState = .idle
-    @Published private(set) var currentTrack: MusicTrack?
+    @Published private(set) var state: MusicPlayerState = .idle {
+        didSet {
+            syncNowPlaying()
+        }
+    }
+    @Published private(set) var currentTrack: MusicTrack? {
+        didSet {
+            syncNowPlaying()
+        }
+    }
     @Published private(set) var currentTime: TimeInterval = 0
 
     // Local Playlist State
@@ -61,6 +69,7 @@ final class MusicPlayerViewModel: ObservableObject {
     private var loadGeneration = 0
     private var autoSkipTask: Task<Void, Never>?
     private var playbackStartWatchdogTask: Task<Void, Never>?
+    private var nowPlayingManager: MusicNowPlayingManager?
     convenience init(restoresPlaylistOnInit: Bool = true) {
         self.init(
             filePicker: MusicFilePicker(),
@@ -103,6 +112,7 @@ final class MusicPlayerViewModel: ObservableObject {
         self.playerController.onIsMutedChange = { [weak self] muted in
             self?.isMuted = muted
         }
+        self.nowPlayingManager = MusicNowPlayingManager(viewModel: self)
         if restoresPlaylistOnInit {
             restorePlaylist()
         }
@@ -636,7 +646,7 @@ final class MusicPlayerViewModel: ObservableObject {
             await self?.loadAndPlay(url: url, generation: generation, resumeFrom: progress, shouldPlay: shouldPlay, onlineSong: onlineSong)
         }
     }
-    func togglePlayPause() {
+    func play() {
         guard currentTrack != nil else {
             if playlistMode == .local {
                 if let currentIndex, playlist.indices.contains(currentIndex) {
@@ -652,14 +662,31 @@ final class MusicPlayerViewModel: ObservableObject {
             return
         }
         switch state {
-        case .playing:
+        case .paused, .idle, .failed(_):
+            playerController.play()
+            state = .playing
+        default:
+            break
+        }
+    }
+    func pause() {
+        if state == .playing {
             playerController.pause()
             playbackStartWatchdogTask?.cancel()
             saveCurrentProgress()
             state = .paused
+        }
+    }
+    func togglePlayPause() {
+        guard currentTrack != nil else {
+            play()
+            return
+        }
+        switch state {
+        case .playing:
+            pause()
         case .paused:
-            playerController.play()
-            state = .playing
+            play()
         case .idle, .failed:
             Task {
                 await addFilesOrDirectoriesToPlaylist()
@@ -691,7 +718,25 @@ final class MusicPlayerViewModel: ObservableObject {
     func seek(to progress: Double) {
         guard duration > 0 else { return }
         let seconds = min(max(progress, 0), 1) * duration
-        playerController.seek(to: seconds)
+        seekToSeconds(seconds)
+    }
+    func seekToSeconds(_ seconds: TimeInterval) {
+        guard duration > 0 else { return }
+        let targetTime = min(max(seconds, 0), duration)
+        playerController.seek(to: targetTime)
+        currentTime = targetTime
+        lyricsViewModel.updateTime(targetTime)
+        syncNowPlaying()
+    }
+    private func syncNowPlaying() {
+        guard let nowPlayingManager = nowPlayingManager else { return }
+        let isPlaying = state == .playing
+        nowPlayingManager.updateNowPlaying(
+            track: currentTrack,
+            isPlaying: isPlaying,
+            currentTime: currentTime,
+            duration: duration
+        )
     }
     func updateScrubbingProgress(_ progress: Double) {
         guard duration > 0 else { return }
@@ -797,9 +842,6 @@ final class MusicPlayerViewModel: ObservableObject {
         persistPlaylist(syncCurrentProgress: false)
     }
     private func handlePlaybackStarted() {
-        if playlistMode == .online, currentTime <= 0.15 {
-            return
-        }
         playbackStartWatchdogTask?.cancel()
         playbackStartWatchdogTask = nil
         guard currentTrack != nil else { return }
@@ -924,12 +966,21 @@ final class MusicPlayerViewModel: ObservableObject {
         for song: NeteaseSong,
         generation: Int,
         baselineTime: TimeInterval,
-        timeoutNanoseconds: UInt64 = 8_000_000_000
+        timeoutNanoseconds: UInt64? = nil
     ) {
+        let actualTimeoutNanoseconds: UInt64
+        if let timeoutNanoseconds = timeoutNanoseconds {
+            actualTimeoutNanoseconds = timeoutNanoseconds
+        } else {
+            let userTimeout = UserDefaults.standard.double(forKey: "PlaybackTimeoutSeconds")
+            let timeoutSeconds = userTimeout > 0 ? min(max(userTimeout, 10.0), 120.0) : 20.0
+            actualTimeoutNanoseconds = UInt64(timeoutSeconds * 1_000_000_000)
+        }
+
         playbackStartWatchdogTask?.cancel()
         playbackStartWatchdogTask = Task { @MainActor [weak self] in
             do {
-                try await Task.sleep(nanoseconds: timeoutNanoseconds)
+                try await Task.sleep(nanoseconds: actualTimeoutNanoseconds)
                 guard let self, !Task.isCancelled else { return }
                 guard generation == self.loadGeneration else { return }
                 guard self.playlistMode == .online,

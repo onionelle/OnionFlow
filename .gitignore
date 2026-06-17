@@ -5,6 +5,7 @@ DerivedData/
 build/
 Build/
 build_derived/
+buildDerivedData/
 
 *.xcuserstate
 *.xcbkptlist

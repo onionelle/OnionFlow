@@ -873,6 +873,9 @@ final class RemoteControlServer: ObservableObject {
             let volumeTimer = null;
             let activeTab = 'lyrics';
             let activeDiscovery = { type: '3778678', element: null };
+            let lastLocalCurrentIndex = null;
+            let lastOnlineCurrentSongId = null;
+            let pendingScrollTab = null;
             let audioOutputRefreshInterval = 5000;
             let audioOutput = document.getElementById('audioOutput');
             let audioOutputState = { lastRefresh: 0, isEditing: false };
@@ -914,6 +917,21 @@ final class RemoteControlServer: ObservableObject {
                 });
             }
 
+            function scrollCurrentTrackIntoView(tab) {
+              requestAnimationFrame(() => {
+                const selector = tab === 'playlist' ? '#playlist .track.current' : '#searchResults .track.current';
+                const currentTrack = document.querySelector(selector);
+                if (currentTrack) {
+                  currentTrack.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+              });
+            }
+
+            function scheduleCurrentTrackScroll(tab) {
+              pendingScrollTab = tab;
+              scrollCurrentTrackIntoView(tab);
+            }
+
             async function call(path) {
               const response = await fetch(path, { method: 'POST' });
               render(await response.json());
@@ -943,6 +961,34 @@ final class RemoteControlServer: ObservableObject {
               }
               return { title: title, artist: null };
             }
+
+            function copyTextToClipboard(text) {
+              if (navigator.clipboard && window.isSecureContext) {
+                return navigator.clipboard.writeText(text);
+              } else {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                textArea.style.position = "fixed";
+                textArea.style.left = "-999999px";
+                textArea.style.top = "-999999px";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                return new Promise((resolve, reject) => {
+                  try {
+                    const successful = document.execCommand('copy');
+                    if (successful) {
+                      resolve();
+                    } else {
+                      reject(new Error('Copy failed'));
+                    }
+                  } catch (err) {
+                    reject(err);
+                  }
+                  document.body.removeChild(textArea);
+                });
+              }
+            }
             
             function renderSearchStatus(message, color = 'rgba(255,255,255,0.5)') {
               return '<div style="text-align: center; color: ' + color + '; padding: 22px 18px; font-size: 12px; line-height: 1.45;">' + escapeHTML(message) + '</div>';
@@ -956,6 +1002,14 @@ final class RemoteControlServer: ObservableObject {
               document.getElementById('lyricsPanel').classList.toggle('active', tab === 'lyrics');
               document.getElementById('playlistPanel').classList.toggle('active', tab === 'playlist');
               document.getElementById('searchPanel').classList.toggle('active', tab === 'search');
+
+              if (tab === 'playlist') {
+                pendingScrollTab = null;
+                scrollCurrentTrackIntoView('playlist');
+              } else if (tab === 'search') {
+                pendingScrollTab = 'search';
+                scrollCurrentTrackIntoView('search');
+              }
 
               if (tab === 'search') {
                 const results = document.getElementById('searchResults');
@@ -1156,6 +1210,32 @@ final class RemoteControlServer: ObservableObject {
                     failLabelHtml;
                   button.onclick = () => call('/api/play?type=local&index=' + item.index);
 
+                  const copyBtn = document.createElement('button');
+                  copyBtn.className = 'icon-btn';
+                  copyBtn.style.width = '26px';
+                  copyBtn.style.height = '26px';
+                  copyBtn.style.color = 'rgba(255,255,255,0.4)';
+                  copyBtn.style.marginRight = '4px';
+                  copyBtn.style.transition = 'color 0.15s ease';
+                  copyBtn.title = '复制歌名';
+                  copyBtn.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: block; margin: auto;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+                  let isCopied = false;
+                  copyBtn.onmouseover = () => { if (!isCopied) copyBtn.style.color = 'rgba(255,255,255,0.85)'; };
+                  copyBtn.onmouseout = () => { if (!isCopied) copyBtn.style.color = 'rgba(255,255,255,0.4)'; };
+                  copyBtn.onclick = (e) => {
+                      e.stopPropagation();
+                      copyTextToClipboard(item.title).then(() => {
+                          isCopied = true;
+                          copyBtn.style.color = '#34c759';
+                          setTimeout(() => {
+                              isCopied = false;
+                              copyBtn.style.color = 'rgba(255,255,255,0.4)';
+                          }, 1000);
+                      }).catch(err => {
+                          console.error('Failed to copy: ', err);
+                      });
+                  };
+
                   const delBtn = document.createElement('button');
                   delBtn.className = 'icon-btn';
                   delBtn.style.width = '26px';
@@ -1190,7 +1270,7 @@ final class RemoteControlServer: ObservableObject {
                           b.onclick = (ev) => {
                               ev.stopPropagation();
                               menu.remove();
-                              call('/api/remove?index=' + item.index + '&trash=' + isTrash);
+                              call('/api/remove?online=false&index=' + item.index + '&trash=' + isTrash);
                           };
                           return b;
                       };
@@ -1208,11 +1288,18 @@ final class RemoteControlServer: ObservableObject {
                   };
 
                   row.appendChild(button);
+                  row.appendChild(copyBtn);
                   row.appendChild(delBtn);
                   playlist.appendChild(row);
                 });
               }
               filterPlaylist();
+              const currentLocalItem = list && list.find(item => item.isCurrent);
+              const currentLocalIndex = currentLocalItem ? currentLocalItem.index : null;
+              if (data.playlistMode === 'local' && currentLocalIndex !== lastLocalCurrentIndex) {
+                lastLocalCurrentIndex = currentLocalIndex;
+                scheduleCurrentTrackScroll('playlist');
+              }
 
               // Highlight active online song in the search/discovery results list
               const searchItems = document.querySelectorAll('#searchResults > div');
@@ -1291,6 +1378,15 @@ final class RemoteControlServer: ObservableObject {
                       }
                   }
               });
+              const currentOnlineSongId = data.playlistMode === 'online' ? String(data.currentOnlineSongId || '') : null;
+              if (currentOnlineSongId && currentOnlineSongId !== lastOnlineCurrentSongId) {
+                lastOnlineCurrentSongId = currentOnlineSongId;
+                scheduleCurrentTrackScroll('search');
+              }
+              if (pendingScrollTab) {
+                scrollCurrentTrackIntoView(pendingScrollTab);
+                pendingScrollTab = null;
+              }
             }
 
             function renderLyrics(lyrics) {
@@ -1404,8 +1500,9 @@ final class RemoteControlServer: ObservableObject {
                 } else {
                   url = '/api/discovery/playlist?id=' + type;
                 }
+                url += (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
                 if (forceRefresh) {
-                  url += (url.includes('?') ? '&' : '?') + 'refresh=true';
+                  url += '&refresh=true';
                 }
                 const response = await fetch(url);
                 const data = await response.json();
@@ -1503,6 +1600,10 @@ final class RemoteControlServer: ObservableObject {
                 row.appendChild(btn);
                 container.appendChild(row);
               });
+              if (pendingScrollTab === 'search') {
+                scrollCurrentTrackIntoView('search');
+                pendingScrollTab = null;
+              }
             }
 
             async function downloadSong(url, btnId, title) {

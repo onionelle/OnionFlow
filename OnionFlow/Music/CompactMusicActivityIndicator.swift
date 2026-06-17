@@ -152,15 +152,82 @@ struct CompactMusicActivityIndicator: View {
                         style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round)
                     )
                 } else {
-                    // 暂停/闲置：一条极其静谧的低透明度基准直线
-                    var path = Path()
-                    path.move(to: CGPoint(x: 2.0, y: centerY))
-                    path.addLine(to: CGPoint(x: 28.0, y: centerY))
+                    // 暂停/闲置：高质感的多重静态微波（如同冻结的声弦，极富科技与艺术感）
+                    var glowContext = context
+                    glowContext.addFilter(.shadow(color: activeColor.opacity(0.40), radius: 2.0, x: 0, y: 0))
+
+                    let step: CGFloat = 1.0
+
+                    // 1. 主声弦 (中等振幅，带微弱发光)
+                    var path1 = Path()
+                    var started1 = false
+                    for x in stride(from: 2.0, through: 28.0, by: step) {
+                        let normX = (x - 2.0) / 26.0
+                        let envelope = sin(normX * .pi) // 两端完美收拢的包络线
+                        let amp = 2.0 * sin(normX * .pi * 2.0 + 0.6) * envelope
+                        let y = centerY + amp
+                        if !started1 {
+                            path1.move(to: CGPoint(x: x, y: y))
+                            started1 = true
+                        } else {
+                            path1.addLine(to: CGPoint(x: x, y: y))
+                        }
+                    }
+
+                    // 2. 辅声弦 (较小振幅，不同频率与相位)
+                    var path2 = Path()
+                    var started2 = false
+                    for x in stride(from: 2.0, through: 28.0, by: step) {
+                        let normX = (x - 2.0) / 26.0
+                        let envelope = sin(normX * .pi)
+                        let amp = 1.2 * sin(normX * .pi * 3.5 - 0.8) * envelope
+                        let y = centerY + amp
+                        if !started2 {
+                            path2.move(to: CGPoint(x: x, y: y))
+                            started2 = true
+                        } else {
+                            path2.addLine(to: CGPoint(x: x, y: y))
+                        }
+                    }
+
+                    // 3. 微颤高频声弦 (极小振幅)
+                    var path3 = Path()
+                    var started3 = false
+                    for x in stride(from: 2.0, through: 28.0, by: step) {
+                        let normX = (x - 2.0) / 26.0
+                        let envelope = sin(normX * .pi)
+                        let amp = 0.7 * sin(normX * .pi * 5.0 + 1.2) * envelope
+                        let y = centerY + amp
+                        if !started3 {
+                            path3.move(to: CGPoint(x: x, y: y))
+                            started3 = true
+                        } else {
+                            path3.addLine(to: CGPoint(x: x, y: y))
+                        }
+                    }
+
+                    // 增强后的线条宽度与不透明度，使质感更突出
+                    glowContext.stroke(
+                        path1,
+                        with: .color(activeColor.opacity(0.85)),
+                        style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
+                    )
+                    context.stroke(
+                        path1,
+                        with: .color(activeColor),
+                        style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round)
+                    )
 
                     context.stroke(
-                        path,
-                        with: .color(activeColor),
-                        style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
+                        path2,
+                        with: .color(activeColor.opacity(0.55)),
+                        style: StrokeStyle(lineWidth: 1.1, lineCap: .round, lineJoin: .round)
+                    )
+
+                    context.stroke(
+                        path3,
+                        with: .color(activeColor.opacity(0.35)),
+                        style: StrokeStyle(lineWidth: 0.8, lineCap: .round, lineJoin: .round)
                     )
                 }
 

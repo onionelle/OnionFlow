@@ -44,9 +44,9 @@ Music 播放列表开关、线上发现、歌词、快捷启动、临时暂存�
   - [x] 当有正在播放/加载的音乐时，动态显示当前曲目和播放控制选项（播放/暂停、上一首、下一首）
   - [x] 将菜单栏文字翻译为中文（“收起 Onion 面板”/“展开 Onion 面板”、“设置与偏好...”、“退出 Onion”），并分别使用 `chevron.up/down.circle`、`gearshape` 和 `power` 进行视觉美化
   - [x] 为菜单项添加 Command 组合快捷键（`Cmd+E`、`Cmd+,`、`Cmd+Q`），提升操作便利性
-- [x] 为 App 与状态栏重新设计 Claude Code 风格极简像素实心圆（Onion）图标：
+- [x] 为 App 与状态栏重新设计 Onion 图标：
   - [x] 重构状态栏 SVG 图标 `status-bar-onion-mark.svg` 为极简的 18x18 8-bit 点阵像素实心圆
-  - [x] 使用 Swift 脚本动态生成全套尺寸的 App Icon PNG，采用 macOS 圆角矩形深色终端渐变底盘，并在中心以点阵像素格与格栅间隙绘制发光的翡翠绿像素实心圆，更新资产目录 `Contents.json`
+  - [x] 重新生成全套尺寸的 App Icon PNG，采用 macOS 圆角矩形暗色底盘与中心白色 8-bit 点阵像素实心圆，复用现有 `Contents.json` 文件名映射
 - [x] 新增 3 个 Claude Code 风格满屏保护区矢量吉祥物角色（像素猫、像素恐龙、终端蛙）：
   - [x] 新建并实现了 3 个以 Canvas 高保真矢量组件绘制的角色动效 View：像素猫 (`PixelCatMascotView.swift`)、像素恐龙 (`PixelDinoMascotView.swift`) 与终端蛙 (`PixelFrogMascotView.swift`)
   - [x] 在 `MascotKind`、`MascotView` 和设置页 `glowColor` 方法中分别挂载了这 3 个新角色的枚举、路由分发与独特的霓虹散射发光色

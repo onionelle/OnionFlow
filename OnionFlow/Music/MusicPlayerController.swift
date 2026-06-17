@@ -136,7 +136,7 @@ final class MusicPlayerController {
                 guard let self else { return }
                 let seconds = time.seconds
                 self.onProgressChange?(seconds)
-                if seconds.isFinite, seconds > 0.15 {
+                if seconds.isFinite, seconds > 0 {
                     self.reportPlaybackStartedIfNeeded()
                 }
             }
@@ -162,11 +162,10 @@ final class MusicPlayerController {
             }
         }
         timeControlObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] observedPlayer, _ in
-            let currentSeconds = observedPlayer.currentTime().seconds
-            let isPlayingWithProgress = observedPlayer.timeControlStatus == .playing && currentSeconds.isFinite && currentSeconds > 0.15
+            let isPlaying = observedPlayer.timeControlStatus == .playing
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if isPlayingWithProgress {
+                if isPlaying {
                     self.reportPlaybackStartedIfNeeded()
                 }
             }

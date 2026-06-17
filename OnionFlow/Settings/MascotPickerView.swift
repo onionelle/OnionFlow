@@ -42,6 +42,7 @@ struct MascotPickerView: View {
     @AppStorage("autoListenPath") private var autoListenPath = "~/Music"
     @AppStorage("spectrumStyle") private var spectrumStyle = "columns"
     @AppStorage("NeteaseCookie") private var neteaseCookie = ""
+    @AppStorage("PlaybackTimeoutSeconds") private var playbackTimeoutSeconds = 20.0
 
     @State private var hoveredKind: MascotKind? = nil
     @State private var hoveredStyle: SpectrumStyle? = nil
@@ -164,6 +165,11 @@ struct MascotPickerView: View {
                             .background(Color.white.opacity(0.08))
 
                         neteaseCookieSection
+
+                        Divider()
+                            .background(Color.white.opacity(0.08))
+
+                        playbackTimeoutSection
                     }
                     .padding(.horizontal, 12)
                     .background(Color.black.opacity(0.2))
@@ -228,6 +234,11 @@ struct MascotPickerView: View {
         .onAppear {
             if MascotKind(rawValue: selectedKindRawValue) == nil {
                 selectedKindRawValue = MascotKind.pixelPuppy.rawValue
+            }
+            if playbackTimeoutSeconds < 10.0 {
+                playbackTimeoutSeconds = 10.0
+            } else if playbackTimeoutSeconds > 120.0 {
+                playbackTimeoutSeconds = 120.0
             }
         }
     }
@@ -570,6 +581,7 @@ struct MascotPickerView: View {
     private func mascotCard(for kind: MascotKind) -> some View {
         let selected = selectedKindRawValue == kind.rawValue
         let isHovered = hoveredKind == kind
+        let shouldAnimatePreview = selected || isHovered
         let themeColor = glowColor(for: kind)
 
         VStack(spacing: 3) {
@@ -579,7 +591,7 @@ struct MascotPickerView: View {
                     .fill(Color.black.opacity(0.35))
                     .frame(width: 32, height: 32)
 
-                MascotView(kind: kind, state: .idle, size: 28)
+                MascotView(kind: kind, state: .idle, size: 28, isStatic: !shouldAnimatePreview)
                     .frame(width: 26, height: 26)
             }
             .padding(.top, 5)
@@ -641,6 +653,45 @@ struct MascotPickerView: View {
         }
     }
 
+    @ViewBuilder
+    private var playbackTimeoutSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.orange.opacity(0.1))
+                        .frame(width: 28, height: 28)
+
+                    Image(systemName: "timer")
+                        .font(.system(size: 11.5, weight: .bold))
+                        .foregroundStyle(Color.orange)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("网络连接超时")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+
+                    Text("在线播放及缓冲的等待时间限制")
+                        .font(.system(size: 9, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.42))
+                }
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    Slider(value: $playbackTimeoutSeconds, in: 10...120, step: 1.0)
+                        .frame(width: 100)
+                    Text("\(Int(playbackTimeoutSeconds))秒")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .frame(width: 30, alignment: .trailing)
+                }
+            }
+            .padding(.vertical, 6)
+        }
+    }
+
 }
 
 /// 频谱样式单卡组件 - 独立 Struct 完美突破 Swift 复杂布局的类型检测瓶颈
@@ -652,6 +703,7 @@ struct SpectrumStyleCard: View {
     var body: some View {
         let selected = spectrumStyle == style.rawValue
         let isHovered = hoveredStyle == style
+        let shouldAnimatePreview = selected || isHovered
         let themeColor = Color(red: 0.16, green: 0.82, blue: 0.50) // 频谱专属翡翠绿
 
         let cardContent = VStack(spacing: 3) {
@@ -660,7 +712,7 @@ struct SpectrumStyleCard: View {
                     .fill(Color.black.opacity(0.35))
                     .frame(width: 48, height: 24)
 
-                SpectrumPreviewView(style: style)
+                SpectrumPreviewView(style: style, isAnimated: shouldAnimatePreview)
                     .allowsHitTesting(false)
             }
             .padding(.top, 5)
@@ -708,10 +760,17 @@ struct SpectrumStyleCard: View {
 /// 频谱实时动能物理预览器 - 彻底释放编译压力，防 typecheck 超时
 struct SpectrumPreviewView: View {
     let style: SpectrumStyle
+    let isAnimated: Bool
 
     var body: some View {
-        TimelineView(.periodic(from: Date(), by: 1.0 / 30.0)) { timeline in
-            previewCanvas(for: style, time: timeline.date.timeIntervalSinceReferenceDate)
+        Group {
+            if isAnimated {
+                TimelineView(.periodic(from: Date(), by: 1.0 / 30.0)) { timeline in
+                    previewCanvas(for: style, time: timeline.date.timeIntervalSinceReferenceDate)
+                }
+            } else {
+                previewCanvas(for: style, time: 0)
+            }
         }
         .frame(width: 30, height: 14)
     }
@@ -853,6 +912,7 @@ struct SpectrumPreviewView: View {
         }
     }
 }
+
 
 // 独立高光关闭按钮
 private struct CloseButton: View {
