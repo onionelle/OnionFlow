@@ -36,6 +36,12 @@ final class MusicPlayerController {
     var onPlaybackStarted: (() -> Void)?
     var onPlaybackFailure: ((String) -> Void)?
     var onPlaybackStalled: (() -> Void)?
+    var progressInterval: TimeInterval = 0.25 {
+        didSet {
+            guard timeObserver != nil, abs(oldValue - progressInterval) > 0.05 else { return }
+            installTimeObserver()
+        }
+    }
     func load(url: URL, predefinedTitle: String? = nil, predefinedArtist: String? = nil, predefinedDuration: TimeInterval? = nil) async throws -> MusicTrack {
         loadRequestID += 1
         let requestID = loadRequestID
@@ -46,6 +52,10 @@ final class MusicPlayerController {
         if isLocalFile {
             beginSecurityScopedAccess(for: url)
         }
+        DiagnosticLogService.shared.log("player.load.begin", url: url, [
+            "requestID": String(requestID),
+            "securityScopedAccessStarted": isLocalFile && isAccessingSecurityScopedResource ? "true" : "false"
+        ])
 
         do {
             let asset = AVURLAsset(
@@ -81,7 +91,7 @@ final class MusicPlayerController {
             let item = AVPlayerItem(asset: asset)
             player.replaceCurrentItem(with: item)
             installTimeObserver()
-            installPlaybackObservers(for: item)
+            installPlaybackObservers(for: item, url: url)
             return MusicTrack(
                 url: url,
                 duration: duration,
@@ -92,17 +102,28 @@ final class MusicPlayerController {
             if requestID == loadRequestID {
                 clearCurrentItem(invalidatesPendingLoads: false)
             }
+            if !(error is CancellationError) {
+                DiagnosticLogService.shared.log("player.load.failed", url: url, [
+                    "requestID": String(requestID),
+                    "error": Self.playbackFailureMessage(from: error)
+                ])
+            }
             throw error
         }
     }
     func play() {
+        if timeObserver == nil, player.currentItem != nil {
+            installTimeObserver()
+        }
         player.play()
     }
     func pause() {
         player.pause()
+        removeTimeObserver()
     }
     func pauseAndResetToBeginning() {
         player.pause()
+        removeTimeObserver()
         player.seek(to: .zero)
         onProgressChange?(0)
     }
@@ -129,11 +150,13 @@ final class MusicPlayerController {
         return trimmed.isEmpty ? nil : trimmed
     }
     private func installTimeObserver() {
-        let interval = CMTime(seconds: 0.2, preferredTimescale: 600)
+        removeTimeObserver()
+        let interval = CMTime(seconds: max(progressInterval, 0.2), preferredTimescale: 600)
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             // AVPlayer 回调不继承 MainActor 隔离，回写 UI 状态前显式切回主 actor。
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                guard self.player.timeControlStatus == .playing else { return }
                 let seconds = time.seconds
                 self.onProgressChange?(seconds)
                 if seconds.isFinite, seconds > 0 {
@@ -142,18 +165,31 @@ final class MusicPlayerController {
             }
         }
     }
-    private func installPlaybackObservers(for item: AVPlayerItem) {
+    private func removeTimeObserver() {
+        if let timeObserver {
+            player.removeTimeObserver(timeObserver)
+            self.timeObserver = nil
+        }
+    }
+    private func installPlaybackObservers(for item: AVPlayerItem, url: URL) {
         hasReportedPlaybackStart = false
+        let requestID = loadRequestID
+        let loadedURL = url
         itemStatusObservation = item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
             let status = observedItem.status
-            let failureMessage = observedItem.error?.localizedDescription
+            let failureMessage = observedItem.error.map { Self.playbackFailureMessage(from: $0) }
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self, self.loadRequestID == requestID else { return }
                 switch status {
                 case .readyToPlay:
                     break
                 case .failed:
-                    self.reportPlaybackFailure(failureMessage ?? "播放链接不可用")
+                    let message = failureMessage ?? "播放链接不可用"
+                    DiagnosticLogService.shared.log("player.item.status_failed", url: loadedURL, [
+                        "requestID": String(requestID),
+                        "error": message
+                    ])
+                    self.reportPlaybackFailure(message)
                 case .unknown:
                     break
                 @unknown default:
@@ -164,7 +200,7 @@ final class MusicPlayerController {
         timeControlObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] observedPlayer, _ in
             let isPlaying = observedPlayer.timeControlStatus == .playing
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self, self.loadRequestID == requestID else { return }
                 if isPlaying {
                     self.reportPlaybackStartedIfNeeded()
                 }
@@ -176,7 +212,8 @@ final class MusicPlayerController {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.onPlaybackEnded?()
+                guard let self, self.loadRequestID == requestID else { return }
+                self.onPlaybackEnded?()
             }
         }
         failedObserver = NotificationCenter.default.addObserver(
@@ -185,8 +222,14 @@ final class MusicPlayerController {
             queue: .main
         ) { [weak self] notification in
             let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+            let message = error.map { Self.playbackFailureMessage(from: $0) } ?? "播放中断"
             Task { @MainActor [weak self] in
-                self?.reportPlaybackFailure(error?.localizedDescription ?? "播放中断")
+                guard let self, self.loadRequestID == requestID else { return }
+                DiagnosticLogService.shared.log("player.item.failed_to_end", url: loadedURL, [
+                    "requestID": String(requestID),
+                    "error": message
+                ])
+                self.reportPlaybackFailure(message)
             }
         }
         stalledObserver = NotificationCenter.default.addObserver(
@@ -195,15 +238,28 @@ final class MusicPlayerController {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.onPlaybackStalled?()
+                guard let self, self.loadRequestID == requestID else { return }
+                DiagnosticLogService.shared.log("player.item.stalled", url: loadedURL, [
+                    "requestID": String(requestID)
+                ])
+                self.onPlaybackStalled?()
             }
         }
     }
-    private func removeObservers() {
-        if let timeObserver {
-            player.removeTimeObserver(timeObserver)
-            self.timeObserver = nil
+
+    nonisolated private static func playbackFailureMessage(from error: Error) -> String {
+        let nsError = error as NSError
+        var parts = [nsError.localizedDescription, "\(nsError.domain):\(nsError.code)"]
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            parts.append("\(underlying.domain):\(underlying.code)")
         }
+        if let reason = nsError.userInfo[NSLocalizedFailureReasonErrorKey] as? String, !reason.isEmpty {
+            parts.append(reason)
+        }
+        return parts.joined(separator: " | ")
+    }
+    private func removeObservers() {
+        removeTimeObserver()
         itemStatusObservation?.invalidate()
         itemStatusObservation = nil
         timeControlObservation?.invalidate()

@@ -1,43 +1,61 @@
+import AppKit
 import SwiftUI
 
 /// compact 右侧的单线 + 音谱律动指示器。
-/// 遵循 DESIGN.md 规范，支持多种频谱风格的选择并可在设置中切换和持久化：
-/// 1. 翡翠晶柱 ("columns")：经典 5 栏垂直霓虹跳跃音轨。
-/// 2. 极简声波 ("wave")：优雅流畅的多重谐波正弦曲线，随低中高音频段波动。
-/// 3. 灵动呼吸 ("breathing")：中间一个悬浮的极简胶囊，尺寸和发光度随重低音重拍起落而向外呼吸晕染。
-/// 4. 科幻脉冲 ("pulse")：5 栏垂直上下对称双向跳动的晶柱。
+/// 播放中截成位图后由 CALayer 切帧，避免 20fps Canvas 常驻占用 CPU。
 struct CompactMusicActivityIndicator: View {
-    @ObservedObject var musicViewModel: MusicPlayerViewModel
+    let isPlaying: Bool
+    let hasMusicContext: Bool
     @AppStorage("spectrumStyle") private var spectrumStyle = "columns"
+    @State private var playingFrames: [NSImage] = []
 
-    private var state: MusicPlayerState {
-        musicViewModel.state
-    }
-
-    private var isPlaying: Bool {
-        state == .playing
-    }
-
-    private var hasMusicContext: Bool {
-        switch state {
-        case .playing, .paused, .loading:
-            return true
-        case .idle, .failed:
-            return false
-        }
-    }
+    private static let frameCount = 12
+    private static let loopDuration: TimeInterval = 1.0
 
     var body: some View {
-        ZStack {
-            if isPlaying {
-                TimelineView(.periodic(from: Date(), by: 1.0 / 30.0)) { timeline in
-                    indicatorCanvas(time: timeline.date.timeIntervalSinceReferenceDate)
-                }
+        Group {
+            if isPlaying, !playingFrames.isEmpty {
+                CompactSpectrumSpriteView(frames: playingFrames, duration: Self.loopDuration)
             } else {
                 indicatorCanvas(time: 0)
             }
         }
         .frame(width: 30, height: 14)
+        .onAppear(perform: capturePlayingFramesIfNeeded)
+        .onChange(of: isPlaying) { _, _ in
+            capturePlayingFramesIfNeeded()
+        }
+        .onChange(of: spectrumStyle) { _, _ in
+            playingFrames = []
+            capturePlayingFramesIfNeeded()
+        }
+    }
+
+    private func capturePlayingFramesIfNeeded() {
+        guard isPlaying, playingFrames.isEmpty else { return }
+        DispatchQueue.main.async {
+            guard isPlaying, playingFrames.isEmpty else { return }
+            let frames = (0..<Self.frameCount).compactMap { index -> NSImage? in
+                let time = Self.loopDuration * Double(index) / Double(Self.frameCount)
+                return snapshotCanvas(time: time)
+            }
+            if !frames.isEmpty {
+                playingFrames = frames
+            }
+        }
+    }
+
+    private func snapshotCanvas(time: TimeInterval) -> NSImage? {
+        let content = indicatorCanvas(time: time)
+            .frame(width: 30, height: 14)
+            .colorScheme(.dark)
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+        renderer.proposedSize = ProposedViewSize(width: 30, height: 14)
+        if let image = renderer.nsImage, image.size.width > 1 {
+            return image
+        }
+        return nil
     }
 
     private func indicatorCanvas(time: TimeInterval) -> some View {
@@ -398,5 +416,83 @@ struct CompactMusicActivityIndicator: View {
         let pulse = raw * glitterMod
 
         return CGFloat(min(1.0, max(0.02, 0.03 + pulse)))
+    }
+}
+
+private struct CompactSpectrumSpriteView: NSViewRepresentable {
+    let frames: [NSImage]
+    let duration: TimeInterval
+
+    func makeNSView(context: Context) -> CompactSpectrumNSView {
+        let view = CompactSpectrumNSView()
+        view.configure(frames: frames, duration: duration)
+        return view
+    }
+
+    func updateNSView(_ nsView: CompactSpectrumNSView, context: Context) {
+        nsView.configure(frames: frames, duration: duration)
+    }
+}
+
+private final class CompactSpectrumNSView: NSView {
+    private let imageLayer = CALayer()
+    private var frames: [NSImage] = []
+    private var duration: TimeInterval = 1
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        imageLayer.contentsGravity = .resize
+        layer?.addSublayer(imageLayer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        imageLayer.frame = bounds
+        CATransaction.commit()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            startIfNeeded()
+        } else {
+            imageLayer.removeAnimation(forKey: "spectrumPose")
+        }
+    }
+
+    func configure(frames: [NSImage], duration: TimeInterval) {
+        self.frames = frames
+        self.duration = duration
+        imageLayer.contents = frames.first
+        imageLayer.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        if window != nil {
+            imageLayer.removeAnimation(forKey: "spectrumPose")
+            startIfNeeded()
+        }
+    }
+
+    private func startIfNeeded() {
+        guard window != nil, frames.count > 1 else { return }
+        let images = frames.compactMap { image -> CGImage? in
+            var rect = CGRect(origin: .zero, size: image.size)
+            return image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+        }
+        guard images.count > 1 else { return }
+        let animation = CAKeyframeAnimation(keyPath: "contents")
+        animation.values = images
+        animation.duration = duration
+        animation.repeatCount = .infinity
+        animation.calculationMode = .discrete
+        animation.isRemovedOnCompletion = false
+        imageLayer.add(animation, forKey: "spectrumPose")
     }
 }

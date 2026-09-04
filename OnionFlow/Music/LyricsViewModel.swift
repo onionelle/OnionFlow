@@ -112,6 +112,7 @@ final class LyricsViewModel: ObservableObject {
     func importLocalLyrics(from url: URL, for track: MusicTrack?) {
         guard let track else { return }
         guard let lines = service.importLyricsFile(url, for: track) else {
+            DiagnosticLogService.shared.log("lyrics.import.failed", url: url)
             state = .failed("无法读取所选 LRC 文件")
             return
         }
@@ -140,7 +141,9 @@ final class LyricsViewModel: ObservableObject {
     func updateTime(_ time: TimeInterval) {
         latestPlaybackTime = time
         guard state == .success, !lyricLines.isEmpty else {
-            currentLineIndex = nil
+            if currentLineIndex != nil {
+                currentLineIndex = nil
+            }
             return
         }
 

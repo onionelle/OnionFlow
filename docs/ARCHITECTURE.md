@@ -37,15 +37,18 @@
 - 创建 `MusicPlayerViewModel`
 - 创建 `QuickLaunchViewModel`
 - 创建 `TemporaryTrayViewModel`
+- 创建 `SystemMetricsViewModel` 并启动系统状态采样
 - 创建并启动 `RemoteControlServer`
+- 启动 `DiagnosticLogService`
 - 挂载 `MenuBarExtra`
 - 提供 menu bar app 入口
 
 当前实现思路：
 
 - 使用 `@NSApplicationDelegateAdaptor` 接入 `AppDelegate`
-- 在 `applicationDidFinishLaunching` 中创建顶部 island panel
+- 在 `applicationDidFinishLaunching` 中先启动诊断日志，再创建顶部 island panel
 - 在 `applicationDidFinishLaunching` 中启动局域网网页遥控器，并在菜单栏显示访问地址
+- 菜单栏提供「在 Finder 中显示诊断日志」，定位 `Application Support/OnionFlow/Logs/onion-diagnostics.log`
 
 ## 2. 窗口控制层
 
@@ -204,7 +207,7 @@ Music 子系统职责：
 - `MusicTrack.swift` — 单曲模型，保存本地 URL、时长及用于歌词匹配的标题 / 歌手；metadata 缺失时按文件名回退
 - `MusicPlayerState.swift` — 播放状态枚举，不保存曲目信息
 - `MusicFilePicker.swift` — 使用 `NSOpenPanel` 混合选择本地音频文件和音乐目录
-- `MusicPlayerController.swift` — 唯一直接使用 `AVPlayer` 的底层播放控制器，负责 security-scoped 文件访问生命周期，并把播放开始、结束、失败与 stall 状态回传给 ViewModel
+- `MusicPlayerController.swift` — 唯一直接使用 `AVPlayer` 的底层播放控制器，负责正在播放文件的 security-scoped 访问生命周期，并把播放开始、结束、失败与 stall 状态回传给 ViewModel。load 开始 / 失败、item 中途失败和 stall 写入诊断日志。歌词读取和播放列表保存不得对当前播放 URL 再 `stopAccessingSecurityScopedResource`
 - `MusicPlayerViewModel.swift` — 音乐状态、本地 / 线上播放模式、播放列表状态和动作入口；退出时保存当前播放进度
 - `OnlineMusicService.swift` — 网易云登录状态、用户歌单、在线歌曲播放 URL 和边听边存触发的服务边界
 - `NeteaseAPIClient.swift` — 网易云榜单、搜索、歌单、相似歌曲、播放 URL 和账号状态请求
@@ -212,14 +215,14 @@ Music 子系统职责：
 - `NeteaseDiscoveryView.swift` — 线上发现页，承载榜单、搜索、个人歌单、相似推荐、在线歌曲列表和失败状态提示；列表结果与失败状态只保留当前 App 会话缓存
 - `OnlineDownloadManager.swift` — 在线歌曲下载到本地目录，并服务“边听边存”
 - `MusicFolderMonitor.swift` — 可选监听指定音乐目录，发现新增音频后转交播放列表导入
-- `AudioOutputDeviceService.swift` — 使用 CoreAudio 枚举系统输出设备，并按保存的设备 UID 尝试切换默认输出设备
+- `AudioOutputDeviceService.swift` — 使用 CoreAudio 枚举系统输出设备，并按保存的设备 UID 尝试切换默认输出设备。恢复失败时诊断日志会写明原因（列表为空、UID 不在 CoreAudio、系统切换失败）以及当时可见设备和蓝牙配对 / 连接状态
 - `LyricsService.swift` — 读取本地 / 已确认缓存歌词；仅在用户允许后搜索在线候选、下载确认结果并写入缓存
 - `LyricsViewModel.swift` — 歌词标签页状态、本地导入、在线候选选择、失败重试和时间高亮同步
 - `MusicLyricsView.swift` — 歌词滚动展示、联网关闭提示、候选选择与重新匹配操作
 - `MusicPlaybackMode.swift` — 播放模式枚举，支持顺序、单曲循环、列表循环、随机
 - `MusicDirectoryScanner.swift` — 判断拖入文件 / 目录是否可导入，并扫描目录第一层筛选支持的本地音频文件
 - `MusicPlaylistStore.swift` — 使用 JSON 保存本地音频文件 URL、只读 security-scoped bookmark、当前索引、播放模式和当前曲目播放进度，存储在 Application Support；恢复时把原始索引映射到过滤后的有效列表；不保存线上发现歌曲列表或在线播放失败状态
-- `MusicExpandedView.swift` — expanded mini player 的顶部控制、进度区和下方功能入口组合，不承载播放列表卡片、快捷启动或临时暂存内部实现
+- `MusicExpandedView.swift` — expanded mini player 的顶部控制、进度区和下方功能入口组合，不承载播放列表卡片、快捷启动或临时暂存内部实现；展开内容与底部系统状态共用 `36pt` 左右边距
 - `MusicPlaylistPanelView.swift` — 播放列表 / 歌词共用卡片、切换头部与音乐投放热区
 - `MusicPlaylistPreviewItem.swift` — 播放列表单行展示、当前播放指示与删除入口
 - `MusicTimelineSlider.swift` — 拖动进度条的局部交互与回调转发
@@ -247,32 +250,46 @@ TemporaryTray 子系统职责：
 
 Controls 子系统职责：
 
+- `IslandTypography.swift` — 全 App 字体：整数号；10pt 及以上 light，8–9pt regular
+- `IslandEmptyHint.swift` — 播放列表、快捷启动、临时暂存共用的细字空态提示
 - `IslandToolButton.swift` — 单个圆形图标按钮，统一 hover 背景、描边和辅助提示
 - `IslandToolButtonsView.swift` — 横向组合静音、设置、退出三个工具按钮
 - `DropFrameReporter.swift` — 将 SwiftUI 热区 frame 上报到 AppKit 拖拽路由使用的 window 内容坐标系，供播放列表、快捷启动和临时暂存复用
 - 静音只更新 Onion 内部状态，不修改系统音量
 - 设置和退出通过 `IslandViewModel` 回调交给 `OnionFlowApp.swift`
 
+SystemMonitor 子系统职责：
+
+- `SystemMetrics.swift` — GPU 温度、风扇使用率、CPU / 内存占用、上下行网速的只读快照；比较时忽略采样时间，避免无变化刷新
+- `SystemMetricsService.swift` — CPU / 内存 / 网速 2 秒一轮，GPU 温度和风扇 4 秒一轮；HID 读 Apple Silicon GPU 温度，SMC 只读风扇，Mach 读 CPU 与内存，sysctl 读网卡字节差。不调风扇、不装 Helper
+- `SystemMetricsViewModel.swift` — App 启动后开始采样，退出时停止；把快照发到主线程
+- `SystemMetricsStripView.swift` — 展开态底部系统状态细字：左 GPU / 风扇 / CPU / 内存，右上下行网速，不接收点击；布局开关仍居中
+- 粒子场在播放与加载中保持同一 `CALayer`，切歌不重起；布局开关改变 island 高度时只裁剪飞行范围，轨迹按最大高度计算
+
+Diagnostics 子系统职责：
+
+- `DiagnosticLogService.swift` — 进程级本地诊断日志：写入 `Application Support/OnionFlow/Logs/`，2MB 轮转一份 `.old`，默认开启，设置页「诊断日志」可关闭；去掉 Cookie / Authorization / URL query；启动、退出同步落盘，并承接未捕获 NSException。当前已记录播放失败 / 重试、歌词检索与导入失败、播放列表读写 / bookmark 解析失败、遥控器启动失败、下载失败、默认输出恢复失败，以及设置窗内容为空或未能显示。不上传、不进 island、不记录进度 / 动画等高频路径。菜单栏「在 Finder 中显示诊断日志」只负责打开该文件。
+
 Mascot 子系统职责：
 
 - `MascotState.swift` — idle / working / music 动画状态枚举
-- `MascotKind.swift` — `String` rawValue + `CaseIterable`，含小机器人 / 鬼魂 / 像素螃蟹 / 像素小狗 / 像素猫 / 像素恐龙 / 终端蛙
+- `MascotKind.swift` — `String` rawValue + `CaseIterable`，含鬼魂 / 像素幽灵 / 像素螃蟹 / 像素小狗
 - `MascotView.swift` — 统一入口，按 `MascotKind` 分发到具体角色 View
-- `Characters/RobotMascotView.swift` — 小机器人，舱体舱门、金属高光、高透面罩、LED眼睛带均衡器跳动、胸口 Arc Reactor 呼吸核心与两侧悬浮双手
+- `MascotRenderedCanvas.swift` — 共用渲染主机：idle / music 将 Canvas 拍成位图后由 `CALayer` 做位移与切帧；播放进度走 `MusicProgressClock`，不触发 island 整树重绘
+- `MusicProgressClock.swift` — 当前时间和拖动进度的独立发布源，供进度条和歌词使用
 - `Characters/GhostMascotView.swift` — 害羞幽灵，半透明发光白蓝渐变、粉红腮红、双手浮空、底部底边裙摆呈数学正弦波实时水波流动
+- `Characters/PixelGhostMascotView.swift` — 像素幽灵，8-bit 圆顶裙摆点阵，idle 飘 Z，music 横移与音符
 - `Characters/PixelCrabMascotView.swift` — 像素螃蟹，复古 8-bit 点阵格栅、双螯挥舞和横行动效
-- `Characters/PixelCatMascotView.swift` — 像素猫，尾巴摇摆与眨眼
-- `Characters/PixelDinoMascotView.swift` — 像素恐龙，奔跑与大跳
-- `Characters/PixelFrogMascotView.swift` — 终端蛙，腮帮呼吸与大弹跳
+- `Characters/PixelPuppyMascotView.swift` — 像素小狗，复古 8-bit 点阵格栅、摇尾与奔跑帧
 - idle 状态：极缓浮沉呼吸、天线/项圈铃铛/反应堆核心发光呼吸 + 错位 Z 上浮
 - working 状态：运动加速，头顶额外浮现 3 点式 Loading（小草点、浆果点、碎石点等），显示专注和后台深度处理
 - music 状态：强节奏跳跃，并由 `MascotMusicNotesEffect` 提供环绕音符特效
 
 Settings 子系统职责：
 
-- `MascotPickerView.swift` — 角色卡片、频谱风格、氛围背景 / 粒子、歌词联网偏好与性能效果设置
+- `MascotPickerView.swift` — 角色卡片、频谱风格、氛围背景 / 粒子、歌词联网偏好、诊断日志开关与性能效果设置
 - `SettingsWindowController.swift` — 固定宽度、内容自适应高度的可交互独立 NSPanel，负责面板生命周期、鼠标事件接收、相对 island 的定位、高度变化时保持顶部锚点，以及失焦关闭。为了在 macOS 15.0 部署目标下绕过 Swift 编译器优化阶段的 `EarlyPerfInliner` 崩溃 Bug，内部 `SettingsHostingView` 统一采用非泛型的 `NSHostingView<AnyView>` 避让方案。
-- 通过 `@AppStorage` 与渲染 / 歌词状态共享 `mascotKind`、`spectrumStyle`、`backgroundNebulaEnabled`、`backgroundParticlesEnabled`、`backgroundNebulaTheme` 和 `onlineLyricsEnabled`；expanded 内容按背景开关挂载 / 卸载 `AntigravityBackgroundView`，歌词联网权限由 `LyricsViewModel` 在歌词检查时读取
+- 通过 `@AppStorage` 与渲染 / 歌词状态共享 `mascotKind`、`spectrumStyle`、`backgroundNebulaEnabled`、`backgroundParticlesEnabled`、`backgroundNebulaTheme`、`onlineLyricsEnabled` 和 `diagnosticLoggingEnabled`；展开且开启星云 / 粒子时由 `ContentView` 把 `AntigravityBackgroundView` 铺在 compact 与 expanded 内容后面，随 `isExpanded` 同一段弹簧淡入淡出，不跟窗口预留绑在一起。当前屏有摄像头挖空时，顶部再叠一层黑到透明的过渡，贴合刘海。粒子在播放与加载中保持同一 `CALayer`，切歌不重起；布局高度变化只裁剪飞行范围。歌词联网权限由 `LyricsViewModel` 在歌词检查时读取，诊断日志开关由 `DiagnosticLogService` 在每次写入前读取
 
 当前结构：
 
@@ -311,7 +328,7 @@ Settings 子系统职责：
 7. App 启动时，`MusicPlayerViewModel` 从 `MusicPlaylistStore` 恢复音频文件 URL、只读 security-scoped bookmark、当前索引、播放模式和当前曲目进度；恢复时过滤已不存在或不再是音频的文件，并将保存的原始 `currentIndex` 映射到过滤后的有效列表
 8. 启动恢复会加载当前曲目，seek 到上次位置并继续播放；旧 `playlist.json` 缺少 `currentTrackProgress` 时按 0 处理
 9. 如果当前没有有效播放列表，ViewModel 设置 `currentIndex` 并调用 `MusicPlayerController.load(url:)` 播放新添加的第一首
-10. `MusicPlayerController` 对本地 URL 开启 security-scoped access，使用 `AVPlayerItem` 加载文件，并安装进度 / 播放开始 / 播放结束 / 失败 / stall 监听。若加载或播放失败，当前曲目 URL 会被添加进 `failedLocalURLs` 中，并在 Native 播放列表与遥控端网页上呈现为珊瑚红并显示 `[未找到/不支持]` 标签；悬浮 Tooltip 被精简
+10. `MusicPlayerController` 对本地 URL 开启 security-scoped access，使用 `AVPlayerItem` 加载文件，并安装进度 / 播放开始 / 播放结束 / 失败 / stall 监听。只有确认无法打开的本地文件才会写入 `failedLocalURLs`，并在 Native 播放列表与遥控端网页上呈现为珊瑚红并显示 `[未找到/不支持]`。播放中途的 AVFoundation -11800 / POSIX 35 等临时读取中断会先重试一次，不把仍存在的文件标成丢失
 11. 加载成功后 `MusicPlayerViewModel` 保存 `MusicTrack`，并切换到 `.playing`
 12. 播放进度通过 controller 回调更新 `currentTime`
 13. 自然播放结束后，ViewModel 按 `MusicPlaybackMode` 决定顺序下一首、列表循环或随机播放
@@ -372,8 +389,9 @@ Settings 子系统职责：
 4. `ContentView` 读取 `@AppStorage` → MascotView 实时更新
 5. Mascot 状态由 `IslandViewModel.isExpanded` 和 `MusicPlayerViewModel.state` 单向映射到 `MascotState`
 6. 用户选择频谱风格、氛围背景主题、动态粒子或“联网匹配歌词” → 通过 `@AppStorage` 分别驱动 compact 频谱、expanded 背景效果和歌词联网权限
-7. 用户在局域网遥控页选择默认输出设备 → `RemoteControlServer` 保存 `preferredAudioOutputDeviceUID` 并调用 `AudioOutputDeviceService` 尝试切换输出
-8. App 启动或收到 `NSWorkspace.didWakeNotification` 后，`AppDelegate` 读取 `preferredAudioOutputDeviceUID` 并让 `AudioOutputDeviceService` 延迟重试切换输出；若蓝牙音箱尚未重新出现在系统输出设备列表中，本轮恢复会失败但不阻塞播放
+7. 用户开关「诊断日志」→ `@AppStorage(diagnosticLoggingEnabled)`，`DiagnosticLogService` 在每次写入前读取；关闭后不再落盘
+8. 用户在局域网遥控页选择默认输出设备 → `RemoteControlServer` 保存 `preferredAudioOutputDeviceUID` 并调用 `AudioOutputDeviceService` 尝试切换输出
+9. App 启动或收到 `NSWorkspace.didWakeNotification` 后，`AppDelegate` 读取 `preferredAudioOutputDeviceUID` 并让 `AudioOutputDeviceService` 延迟重试切换输出；若蓝牙音箱尚未重新出现在系统输出设备列表中，本轮恢复会失败但不阻塞播放
 
 ### 工程命名与数据身份
 

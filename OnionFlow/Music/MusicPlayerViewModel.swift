@@ -21,13 +21,20 @@ final class MusicPlayerViewModel: ObservableObject {
             syncNowPlaying()
         }
     }
-    @Published private(set) var currentTime: TimeInterval = 0
+    let progressClock = MusicProgressClock()
+    var currentTime: TimeInterval {
+        get { progressClock.currentTime }
+        set { progressClock.currentTime = newValue }
+    }
 
     // Local Playlist State
     @Published private(set) var playlist: [URL] = []
     @Published private(set) var currentIndex: Int?
     @Published var failedLocalURLs: Set<URL> = []
     private var consecutiveFailures = 0
+    private var lastLocalLoadURL: URL?
+    private var didRetryCurrentLocalTrack = false
+    private var isHandlingLocalRetry = false
 
     // Online Playlist State
     @Published var onlinePlaylist: [NeteaseSong] = []
@@ -55,7 +62,10 @@ final class MusicPlayerViewModel: ObservableObject {
     }
     @Published private(set) var isDropTargeted: Bool = false
     @Published var dropFrame: CGRect = .zero
-    @Published var scrubbingTime: TimeInterval? = nil
+    var scrubbingTime: TimeInterval? {
+        get { progressClock.scrubbingTime }
+        set { progressClock.scrubbingTime = newValue }
+    }
     let lyricsViewModel = LyricsViewModel()
     private let filePicker: MusicFilePicker
     private let playerController: MusicPlayerController
@@ -70,6 +80,12 @@ final class MusicPlayerViewModel: ObservableObject {
     private var autoSkipTask: Task<Void, Never>?
     private var playbackStartWatchdogTask: Task<Void, Never>?
     private var nowPlayingManager: MusicNowPlayingManager?
+    /// 收起时降低进度回调频率，并跳过歌词逐行扫描。
+    var isIslandExpanded = false {
+        didSet {
+            playerController.progressInterval = isIslandExpanded ? 0.25 : 1.0
+        }
+    }
     convenience init(restoresPlaylistOnInit: Bool = true) {
         self.init(
             filePicker: MusicFilePicker(),
@@ -94,8 +110,13 @@ final class MusicPlayerViewModel: ObservableObject {
         self.playlistStore = playlistStore
         self.onlineMusicService = onlineMusicService
         self.playerController.onProgressChange = { [weak self] seconds in
-            self?.currentTime = seconds
-            self?.lyricsViewModel.updateTime(seconds)
+            guard let self, seconds.isFinite else { return }
+            if abs(self.currentTime - seconds) >= 0.05 {
+                self.currentTime = seconds
+            }
+            if self.isIslandExpanded {
+                self.lyricsViewModel.updateTime(seconds)
+            }
         }
         self.playerController.onPlaybackEnded = { [weak self] in
             self?.handlePlaybackEnded()
@@ -643,7 +664,13 @@ final class MusicPlayerViewModel: ObservableObject {
         playerController.clear()
 
         loadTask = Task { @MainActor [weak self] in
-            await self?.loadAndPlay(url: url, generation: generation, resumeFrom: progress, shouldPlay: shouldPlay, onlineSong: onlineSong)
+            await self?.loadAndPlay(
+                url: url,
+                generation: generation,
+                resumeFrom: progress,
+                shouldPlay: shouldPlay,
+                onlineSong: onlineSong
+            )
         }
     }
     func play() {
@@ -752,6 +779,14 @@ final class MusicPlayerViewModel: ObservableObject {
         scrubbingTime = nil
     }
     private func loadAndPlay(url: URL, generation: Int, resumeFrom progress: TimeInterval? = nil, shouldPlay: Bool = true, onlineSong: NeteaseSong? = nil) async {
+        isHandlingLocalRetry = false
+        if onlineSong == nil {
+            if lastLocalLoadURL != url {
+                lastLocalLoadURL = url
+                didRetryCurrentLocalTrack = false
+            }
+        }
+
         do {
             let track: MusicTrack
             if let onlineSong = onlineSong {
@@ -762,7 +797,7 @@ final class MusicPlayerViewModel: ObservableObject {
                 track = try await playerController.load(url: url)
                 if failedLocalURLs.contains(url) {
                     failedLocalURLs.remove(url)
-                    persistPlaylist(syncCurrentProgress: false)
+                    persistPlaylist(syncCurrentProgress: false, accessingURL: url)
                 }
             }
 
@@ -807,19 +842,51 @@ final class MusicPlayerViewModel: ObservableObject {
                     state = .paused
                 }
             }
+        } catch is CancellationError {
+            guard generation == loadGeneration else { return }
         } catch {
             guard generation == loadGeneration else { return }
             currentTime = 0
-            if onlineSong == nil {
-                print("[MusicPlayerViewModel] Local track unplayable or missing: \(url.path)")
-                failedLocalURLs.insert(url)
-                persistPlaylist(syncCurrentProgress: false)
-            } else if let onlineSong = onlineSong {
+            if let onlineSong {
                 let errorMsg = "网络连接异常或无版权"
+                logPlayback("viewmodel.load.failed", url: url, [
+                    "onlineSongID": String(onlineSong.id),
+                    "error": errorMsg,
+                    "outcome": "online_failed"
+                ])
                 markOnlineSongFailed(id: onlineSong.id, message: errorMsg)
+                setFailedState(message: "无法播放，\(errorMsg)")
+                return
             }
-            let message = "无法播放，" + (onlineSong != nil ? "网络连接异常或无版权" : "文件已移动或格式不支持")
-            setFailedState(message: message)
+
+            let nsError = error as NSError
+            let loadErrorMessage = "\(error.localizedDescription) | \(nsError.domain):\(nsError.code)"
+            if retryLocalPlaybackIfNeeded(
+                url: url,
+                message: loadErrorMessage,
+                resumeFrom: progress,
+                shouldPlay: shouldPlay,
+                didStartPlaying: false
+            ) {
+                return
+            }
+
+            if isTransientLocalPlaybackFailure(loadErrorMessage, didStartPlaying: false) {
+                logPlayback("viewmodel.load.failed", url: url, [
+                    "error": loadErrorMessage,
+                    "outcome": "interrupted"
+                ])
+                setFailedState(message: "无法播放，读取文件时被中断")
+                return
+            }
+
+            logPlayback("viewmodel.load.failed", url: url, [
+                "error": loadErrorMessage,
+                "outcome": "marked_missing"
+            ])
+            failedLocalURLs.insert(url)
+            persistPlaylist(syncCurrentProgress: false)
+            setFailedState(message: "无法播放，文件已移动或格式不支持")
         }
     }
     private func handlePlaybackEnded() {
@@ -892,7 +959,7 @@ final class MusicPlayerViewModel: ObservableObject {
             persistPlaylist()
         }
     }
-    private func persistPlaylist(syncCurrentProgress: Bool = true) {
+    private func persistPlaylist(syncCurrentProgress: Bool = true, accessingURL: URL? = nil) {
         if syncCurrentProgress, currentTrack != nil {
             currentTrackProgress = currentTime
         }
@@ -905,7 +972,7 @@ final class MusicPlayerViewModel: ObservableObject {
             isPlaying: state == .playing,
             failedLocalURLs: failedLocalURLs
         )
-        playlistStore.save(snapshot)
+        playlistStore.save(snapshot, currentlyAccessingURL: accessingURL ?? currentTrack?.url)
     }
     private func saveCurrentProgress() {
         guard currentTrack != nil else { return }
@@ -1000,12 +1067,18 @@ final class MusicPlayerViewModel: ObservableObject {
     }
     private func failCurrentPlayback(message: String) {
         if case .failed = state { return }
+        if isHandlingLocalRetry { return }
         playbackStartWatchdogTask?.cancel()
 
         if playlistMode == .online,
            let currentOnlineIndex,
            activeOnlinePlaylist.indices.contains(currentOnlineIndex) {
             let song = activeOnlinePlaylist[currentOnlineIndex]
+            logPlayback("viewmodel.playback.failure", url: currentTrack?.url, [
+                "onlineSongID": String(song.id),
+                "message": message,
+                "outcome": "online_failed"
+            ])
             markOnlineSongFailed(id: song.id, message: message)
             setFailedState(message: "无法播放，\(message)")
             return
@@ -1015,13 +1088,96 @@ final class MusicPlayerViewModel: ObservableObject {
            let currentIndex,
            playlist.indices.contains(currentIndex) {
             let url = playlist[currentIndex]
+            let didStartPlaying = currentTrack != nil && currentTime > 0
+            if retryLocalPlaybackIfNeeded(
+                url: url,
+                message: message,
+                resumeFrom: currentTime,
+                shouldPlay: true,
+                didStartPlaying: didStartPlaying
+            ) {
+                return
+            }
+
+            if isTransientLocalPlaybackFailure(message, didStartPlaying: didStartPlaying) {
+                logPlayback("viewmodel.playback.failure", url: url, [
+                    "message": message,
+                    "didStartPlaying": didStartPlaying ? "true" : "false",
+                    "outcome": "interrupted"
+                ])
+                setFailedState(message: "无法播放，读取文件时被中断")
+                return
+            }
+
+            logPlayback("viewmodel.playback.failure", url: url, [
+                "message": message,
+                "didStartPlaying": didStartPlaying ? "true" : "false",
+                "outcome": "marked_missing"
+            ])
             failedLocalURLs.insert(url)
             persistPlaylist(syncCurrentProgress: false)
             setFailedState(message: "无法播放，文件已移动或格式不支持")
             return
         }
 
+        logPlayback("viewmodel.playback.failure", url: currentTrack?.url, [
+            "message": message,
+            "outcome": "failed"
+        ])
         setFailedState(message: "无法播放，\(message)")
+    }
+
+    private func retryLocalPlaybackIfNeeded(
+        url: URL,
+        message: String,
+        resumeFrom: TimeInterval?,
+        shouldPlay: Bool,
+        didStartPlaying: Bool
+    ) -> Bool {
+        guard !didRetryCurrentLocalTrack else { return false }
+        guard isTransientLocalPlaybackFailure(message, didStartPlaying: didStartPlaying) else { return false }
+        didRetryCurrentLocalTrack = true
+        isHandlingLocalRetry = true
+        logPlayback("viewmodel.playback.retry", url: url, [
+            "message": message,
+            "resumeFrom": String(format: "%.1f", resumeFrom ?? 0),
+            "didStartPlaying": didStartPlaying ? "true" : "false"
+        ])
+        loadFile(at: url, resumeFrom: resumeFrom, shouldPlay: shouldPlay)
+        return true
+    }
+
+    private func logPlayback(_ tag: String, url: URL?, _ fields: [String: String] = [:]) {
+        var merged = fields
+        merged["mode"] = playlistMode == .local ? "local" : "online"
+        if playlistMode == .local, let currentIndex {
+            merged["currentIndex"] = String(currentIndex)
+        }
+        if playlistMode == .online, let currentOnlineIndex {
+            merged["currentOnlineIndex"] = String(currentOnlineIndex)
+        }
+        if let url {
+            DiagnosticLogService.shared.log(tag, url: url, merged)
+        } else {
+            DiagnosticLogService.shared.log(tag, merged)
+        }
+    }
+
+    private func isTransientLocalPlaybackFailure(_ message: String, didStartPlaying: Bool) -> Bool {
+        if didStartPlaying { return true }
+        let lower = message.lowercased()
+        let markers = [
+            "could not be completed",
+            "temporarily unavailable",
+            "resource temporarily",
+            "avfoundationerrordomain:-11800",
+            "nsposixerrordomain:35",
+            "nsosstatuserrordomain:-66681",
+            "-11800",
+            "-66681",
+            "播放中断"
+        ]
+        return markers.contains { lower.contains($0) }
     }
     private func restartCurrentTrack() {
         switch playlistMode {

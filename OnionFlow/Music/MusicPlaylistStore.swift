@@ -27,8 +27,15 @@ struct MusicPlaylistStore {
     }
 
     func load() -> MusicPlaylistSnapshot? {
-        guard let data = try? Data(contentsOf: storageURL) else { return nil }
-        guard let storedSnapshot = try? JSONDecoder().decode(StoredMusicPlaylistSnapshot.self, from: data) else {
+        guard fileManager.fileExists(atPath: storageURL.path) else { return nil }
+        let storedSnapshot: StoredMusicPlaylistSnapshot
+        do {
+            let data = try Data(contentsOf: storageURL)
+            storedSnapshot = try JSONDecoder().decode(StoredMusicPlaylistSnapshot.self, from: data)
+        } catch {
+            DiagnosticLogService.shared.log("playlist.load.failed", [
+                "error": error.localizedDescription
+            ])
             return nil
         }
         let resolvedEntries = storedSnapshot.playlist.enumerated().compactMap { entry -> (originalIndex: Int, url: URL)? in
@@ -60,7 +67,7 @@ struct MusicPlaylistStore {
         )
     }
 
-    func save(_ snapshot: MusicPlaylistSnapshot) {
+    func save(_ snapshot: MusicPlaylistSnapshot, currentlyAccessingURL: URL? = nil) {
         do {
             let directoryURL = storageURL.deletingLastPathComponent()
             try fileManager.createDirectory(
@@ -69,7 +76,7 @@ struct MusicPlaylistStore {
             )
 
             let storedSnapshot = StoredMusicPlaylistSnapshot(
-                playlist: snapshot.playlist.map(makeEntry),
+                playlist: snapshot.playlist.map { makeEntry(for: $0, currentlyAccessingURL: currentlyAccessingURL) },
                 currentIndex: snapshot.currentIndex,
                 playbackMode: snapshot.playbackMode,
                 currentTrackProgress: snapshot.currentTrackProgress,
@@ -82,7 +89,9 @@ struct MusicPlaylistStore {
             let data = try JSONEncoder().encode(storedSnapshot)
             try data.write(to: storageURL, options: .atomic)
         } catch {
-            // 持久化失败不应影响播放；下次用户操作会再次尝试保存。
+            DiagnosticLogService.shared.log("playlist.save.failed", [
+                "error": error.localizedDescription
+            ])
         }
     }
 
@@ -97,26 +106,43 @@ struct MusicPlaylistStore {
             ) {
                 return url
             }
+            DiagnosticLogService.shared.log("playlist.bookmark.resolve_failed", [
+                "url": entry.url
+            ])
         }
         return URL(string: entry.url)
     }
 
-    private func makeEntry(for url: URL) -> StoredMusicPlaylistEntry {
-        let didStartAccess = url.startAccessingSecurityScopedResource()
-        defer {
-            if didStartAccess {
-                url.stopAccessingSecurityScopedResource()
-            }
+    private func makeEntry(for url: URL, currentlyAccessingURL: URL?) -> StoredMusicPlaylistEntry {
+        // 正在播放的文件已经由播放器持有 security-scoped 访问。若这里再 start 后 stop，
+        // 会把播放权限一起关掉，下一秒 AVPlayer 就会报资源暂时不可用。
+        if let bookmarkData = try? url.bookmarkData(
+            options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        ) {
+            return StoredMusicPlaylistEntry(url: url.absoluteString, bookmarkData: bookmarkData)
         }
+
+        let didStartAccess = url.startAccessingSecurityScopedResource()
         let bookmarkData = try? url.bookmarkData(
             options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         )
+        // startAccessing 不是引用计数：对正在播放的 URL 再 stop，会连播放器的权限一起撤掉。
+        if didStartAccess, !isSameLocalFile(url, as: currentlyAccessingURL) {
+            url.stopAccessingSecurityScopedResource()
+        }
         return StoredMusicPlaylistEntry(
             url: url.absoluteString,
             bookmarkData: bookmarkData
         )
+    }
+
+    private func isSameLocalFile(_ lhs: URL, as rhs: URL?) -> Bool {
+        guard let rhs else { return false }
+        return lhs.standardizedFileURL.path == rhs.standardizedFileURL.path
     }
 }
 

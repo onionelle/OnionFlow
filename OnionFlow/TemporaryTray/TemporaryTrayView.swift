@@ -15,15 +15,11 @@ struct TemporaryTrayView: View {
         ZStack(alignment: .bottom) {
 
             if viewModel.items.isEmpty {
-                VStack(spacing: 2) {
-                    Text(viewModel.isDropTargeted ? "松开以加入临时暂存" : "直接拖入为移动，按 Option 为复制")
-                        .font(.system(size: 9.6, weight: .regular))
-                        .foregroundStyle(Color.white.opacity(viewModel.isDropTargeted ? 0.70 : 0.52))
-
-                    Text("稍后可拖出到 Finder 或其他 App")
-                        .font(.system(size: 8.2, weight: .regular))
-                        .foregroundStyle(Color.white.opacity(0.30))
-                }
+                IslandEmptyHint(
+                    title: viewModel.isDropTargeted ? "松开以加入临时暂存" : "直接拖入为移动，按 Option 为复制",
+                    subtitle: "稍后可拖出到 Finder 或其他 App",
+                    isHighlighted: viewModel.isDropTargeted
+                )
                 .frame(maxHeight: .infinity, alignment: .center)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -105,23 +101,23 @@ struct TemporaryTrayView: View {
                         if let statusText = viewModel.statusText {
                             HStack(spacing: 3.5) {
                                 Image(systemName: viewModel.statusIsSelectionWarning ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                                    .font(.system(size: 7.2))
+                                    .font(.system(size: 7, weight: .regular))
                                 Text(statusText)
-                                    .font(.system(size: 8))
+                                    .font(.system(size: 8, weight: .regular))
                             }
                             .foregroundStyle(viewModel.statusIsSelectionWarning ? Color(red: 0.98, green: 0.42, blue: 0.42) : Color.white.opacity(0.85))
                             .transition(.opacity.combined(with: .scale(scale: 0.88)))
                         } else if !viewModel.selectedItemIDs.isEmpty {
                             Text("已选 \(viewModel.selectedItemIDs.count) 项")
-                                .font(.system(size: 8))
+                                .font(.system(size: 8, weight: .regular))
                                 .foregroundStyle(.white)
                                 .transition(.opacity.combined(with: .scale(scale: 0.88)))
                         } else {
                             HStack(spacing: 4.5) {
                                 Image(systemName: "tray.fill")
-                                    .font(.system(size: 8))
+                                    .font(.system(size: 8, weight: .regular))
                                 Text("临时暂存")
-                                    .font(.system(size: 8.5))
+                                    .font(.system(size: 9, weight: .regular))
                             }
                             .foregroundStyle(Color.white.opacity(0.85))
                             .transition(.opacity)
@@ -138,7 +134,7 @@ struct TemporaryTrayView: View {
                         viewModel.clearItems()
                     } label: {
                         Image(systemName: isTrashHovered ? "trash.fill" : "trash")
-                            .font(.system(size: 9.6, weight: .regular))
+                            .font(.system(size: 10, weight: .light))
                             .foregroundStyle(isTrashHovered ? Color(red: 0.98, green: 0.35, blue: 0.35) : Color.white.opacity(0.48))
                             .frame(width: 18, height: 18)
                             .contentShape(Rectangle())

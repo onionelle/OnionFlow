@@ -106,6 +106,10 @@ final class LyricsService {
             // 重新匹配、低可信自动匹配或自动下载失败时，回退到候选列表供用户手动选择。
             return .candidates(sortedCandidates)
         } catch {
+            DiagnosticLogService.shared.log("lyrics.search.failed", [
+                "error": error.localizedDescription,
+                "query": track.onlineSearchQuery
+            ])
             return .failed("网络请求失败，请稍后重试")
         }
     }
@@ -119,19 +123,18 @@ final class LyricsService {
             cache(text, for: track)
             return .lyrics(lines)
         } catch {
+            DiagnosticLogService.shared.log("lyrics.download.failed", [
+                "error": error.localizedDescription,
+                "songID": String(candidate.id)
+            ])
             return .failed("歌词下载失败，请稍后重试")
         }
     }
 
     private func loadLocalLrc(for trackURL: URL) -> String? {
         let lrcURL = trackURL.deletingPathExtension().appendingPathExtension("lrc")
-        let isTrackScoped = trackURL.startAccessingSecurityScopedResource()
-        defer {
-            if isTrackScoped {
-                trackURL.stopAccessingSecurityScopedResource()
-            }
-        }
-        guard fileManager.fileExists(atPath: lrcURL.path) else { return nil }
+        // 不要对正在播放的音频 URL 再 start/stop 沙盒权限：stop 会把播放器持有的访问掐掉，
+        // AVPlayer 随后以 POSIX 35 / OSStatus -66681 失败，界面却显示成“文件不存在”。
         return try? String(contentsOf: lrcURL, encoding: .utf8)
     }
 

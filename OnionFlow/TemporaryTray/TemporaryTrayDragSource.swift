@@ -134,7 +134,7 @@ final class TemporaryTrayDragSourceView: NSView, NSDraggingSource {
             NSBezierPath(ovalIn: badgeRect).fill()
             let countText = String(count) as NSString
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 8, weight: .bold),
+                .font: NSFont.systemFont(ofSize: 8, weight: .regular),
                 .foregroundColor: NSColor.black
             ]
             let textSize = countText.size(withAttributes: attributes)

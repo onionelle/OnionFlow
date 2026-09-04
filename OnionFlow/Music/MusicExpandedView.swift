@@ -7,9 +7,12 @@ struct MusicExpandedView: View {
     @ObservedObject var musicViewModel: MusicPlayerViewModel
     @ObservedObject var quickLaunchViewModel: QuickLaunchViewModel
     @ObservedObject var temporaryTrayViewModel: TemporaryTrayViewModel
+    @ObservedObject var systemMetricsViewModel: SystemMetricsViewModel
     private let sectionSpacing: CGFloat = 12
     private let separatorLineHeight: CGFloat = 0.6
     private let separatorVerticalPadding: CGFloat = 4
+    /// 播放器、列表、快捷启动、临时暂存和底部系统状态共用的左右边距。
+    private let expandedContentInset: CGFloat = 36
 
     enum ExpandedTab {
         case local
@@ -29,10 +32,18 @@ struct MusicExpandedView: View {
                         // 静态发光底盘：使用静态模糊圆代替动态阴影修饰符，避免高频刷新下每一帧重复执行 GPU 阴影光栅化
                         if musicViewModel.state == .playing {
                             Circle()
-                                .fill(musicAccentColor)
+                                .fill(
+                                    RadialGradient(
+                                        colors: [
+                                            musicAccentColor.opacity(0.42),
+                                            musicAccentColor.opacity(0)
+                                        ],
+                                        center: .center,
+                                        startRadius: 6,
+                                        endRadius: 26
+                                    )
+                                )
                                 .frame(width: 52, height: 52)
-                                .blur(radius: 10)
-                                .opacity(0.35)
                         }
 
                         VinylRecordView(isPlaying: musicViewModel.state == .playing)
@@ -41,7 +52,7 @@ struct MusicExpandedView: View {
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text(musicViewModel.titleText)
-                            .font(.system(size: 15, weight: .regular))
+                            .font(IslandTypography.display)
                             .foregroundStyle(.white.opacity(0.92))
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -99,29 +110,8 @@ struct MusicExpandedView: View {
             .frame(height: 64)
             .padding(.bottom, -14)
 
-            // 进度条与时间控制
-            VStack(spacing: 6) {
-                // 精致无缝滑动进度条，Knob 仅在 Hover/Scrubbing 时才平滑显示，减少视觉噪音
-                MusicTimelineSlider(
-                    progress: musicViewModel.progress,
-                    isEnabled: musicViewModel.hasTrack,
-                    onScrubbingChanged: { progress in
-                        musicViewModel.updateScrubbingProgress(progress)
-                    },
-                    onScrubbingEnded: { progress in
-                        musicViewModel.endScrubbing(at: progress)
-                    }
-                )
-
-                HStack {
-                    Text(musicViewModel.currentTimeText)
-                    Spacer(minLength: 0)
-                    Text(musicViewModel.durationText)
-                }
-                .font(.system(size: 9, weight: .regular, design: .monospaced))
-                .foregroundStyle(.white.opacity(musicViewModel.hasTrack ? 0.58 : 0.30))
-            }
-            .padding(.top, 4)
+            MusicPlaybackTimelineView(musicViewModel: musicViewModel)
+                .padding(.top, 4)
 
 
 
@@ -147,7 +137,7 @@ struct MusicExpandedView: View {
                 TemporaryTrayView(viewModel: temporaryTrayViewModel)
             }
         }
-        .padding(.horizontal, 54)
+        .padding(.horizontal, expandedContentInset)
         .padding(.top, 18)
         .padding(.bottom, currentBottomPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -162,8 +152,8 @@ struct MusicExpandedView: View {
         )
         .overlay(alignment: .top) {
             if !viewModel.isPlaylistEnabled || selectedTab != .lyrics {
-                currentLyricLine
-                    .padding(.horizontal, 54)
+                CompactLyricHintView(lyricsViewModel: musicViewModel.lyricsViewModel)
+                    .padding(.horizontal, expandedContentInset)
                     .padding(.top, 0)
             }
         }
@@ -231,6 +221,18 @@ struct MusicExpandedView: View {
             }
             .padding(.bottom, 8)
         }
+        .overlay(alignment: .bottomLeading) {
+            SystemMetricsStripView(viewModel: systemMetricsViewModel, placement: .hardware)
+                .allowsHitTesting(false)
+                .padding(.leading, expandedContentInset)
+                .padding(.bottom, 14)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            SystemMetricsStripView(viewModel: systemMetricsViewModel, placement: .network)
+                .allowsHitTesting(false)
+                .padding(.trailing, expandedContentInset)
+                .padding(.bottom, 14)
+        }
     }
 
     private var playlistPreviewHeight: CGFloat {
@@ -248,37 +250,7 @@ struct MusicExpandedView: View {
         }
     }
 
-    private var isLyricHintText: Bool {
-        currentLyricText == "暂无歌词，可展开面板进行手动匹配"
-    }
 
-    private var currentLyricLine: some View {
-        Text(currentLyricText)
-            .font(.system(size: 10, weight: .regular)) // 保持常规字重，使字形纤细干净
-            .foregroundStyle(isLyricHintText ? Color.white.opacity(0.38) : musicAccentColor.opacity(currentLyricText.isEmpty ? 0 : 0.95))
-            .shadow(color: isLyricHintText ? Color.clear : musicAccentColor.opacity(currentLyricText.isEmpty ? 0 : 0.58), radius: 3.5) // 精准拟合黄金视觉甜点：单层中等透明度与锐利光圈半径
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity, minHeight: 16, maxHeight: 16, alignment: .center)
-            .animation(.easeInOut(duration: 0.18), value: currentLyricText)
-    }
-
-    private var currentLyricText: String {
-        let lyricsViewModel = musicViewModel.lyricsViewModel
-        switch lyricsViewModel.state {
-        case .success:
-            if let currentLineIndex = lyricsViewModel.currentLineIndex,
-               lyricsViewModel.lyricLines.indices.contains(currentLineIndex) {
-                return lyricsViewModel.lyricLines[currentLineIndex].text
-            }
-            return ""
-        case .noLyrics, .onlineDisabled, .failed, .candidates:
-            return "暂无歌词，可展开面板进行手动匹配"
-        default:
-            return ""
-        }
-    }
 
     @ViewBuilder
     private var playbackStatusBadge: some View {
@@ -287,7 +259,7 @@ struct MusicExpandedView: View {
                 Image(systemName: "exclamationmark.circle.fill")
                     .font(.system(size: 9, weight: .regular))
                 Text(musicViewModel.errorText ?? "无法播放")
-                    .font(.system(size: 9.5, weight: .regular))
+                    .font(.system(size: 9, weight: .regular))
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: 160, alignment: .leading)
@@ -310,7 +282,7 @@ struct MusicExpandedView: View {
                     .shadow(color: musicViewModel.state == .playing ? musicAccentColor.opacity(0.6) : Color.clear, radius: 3)
 
                 Text(musicViewModel.stateText)
-                    .font(.system(size: 9.8, weight: .regular))
+                    .font(.system(size: 9, weight: .regular))
                     .foregroundStyle(Color.white.opacity(0.48))
             }
             .padding(.horizontal, 7)
@@ -333,7 +305,7 @@ struct MusicExpandedView: View {
                 Image(systemName: musicViewModel.playbackModeSystemName)
                     .font(.system(size: 9, weight: .regular))
                 Text(musicViewModel.playbackModeText)
-                    .font(.system(size: 9.5, weight: .regular))
+                    .font(.system(size: 9, weight: .regular))
             }
             .foregroundStyle(musicAccentColor)
             .padding(.horizontal, 7)
@@ -360,7 +332,7 @@ struct MusicExpandedView: View {
 
         let button = Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: isPrimary ? 20 : 13, weight: .regular))
+                .font(.system(size: isPrimary ? 20 : 13, weight: .light))
                 .foregroundStyle(foregroundStyle)
                 .frame(width: size, height: size)
                 .background(
@@ -430,7 +402,7 @@ private struct LayoutToggleButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 8.2, weight: .regular))
+                .font(.system(size: 8, weight: .regular))
                 .foregroundStyle(
                     isActive
                         ? (isHovered ? activeColor : activeColor.opacity(0.85))
@@ -457,5 +429,88 @@ private struct LayoutToggleButton: View {
                 NSCursor.arrow.set()
             }
         }
+    }
+}
+
+private struct MusicPlaybackTimelineView: View {
+    @ObservedObject var progressClock: MusicProgressClock
+    let duration: TimeInterval
+    let hasTrack: Bool
+    let onScrubbingChanged: (Double) -> Void
+    let onScrubbingEnded: (Double) -> Void
+
+    init(musicViewModel: MusicPlayerViewModel) {
+        self.progressClock = musicViewModel.progressClock
+        self.duration = musicViewModel.duration
+        self.hasTrack = musicViewModel.hasTrack
+        self.onScrubbingChanged = { musicViewModel.updateScrubbingProgress($0) }
+        self.onScrubbingEnded = { musicViewModel.endScrubbing(at: $0) }
+    }
+
+    private var progress: Double {
+        guard duration > 0 else { return 0 }
+        let time = progressClock.scrubbingTime ?? progressClock.currentTime
+        return min(max(time / duration, 0), 1)
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            MusicTimelineSlider(
+                progress: progress,
+                isEnabled: hasTrack,
+                onScrubbingChanged: onScrubbingChanged,
+                onScrubbingEnded: onScrubbingEnded
+            )
+
+            HStack {
+                Text(formatTime(progressClock.scrubbingTime ?? progressClock.currentTime))
+                Spacer(minLength: 0)
+                Text(formatTime(duration))
+            }
+            .font(IslandTypography.mono)
+            .foregroundStyle(.white.opacity(hasTrack ? 0.58 : 0.30))
+        }
+    }
+
+    private func formatTime(_ seconds: TimeInterval) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "00:00" }
+        let totalSeconds = Int(seconds)
+        return String(format: "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+}
+
+private struct CompactLyricHintView: View {
+    @ObservedObject var lyricsViewModel: LyricsViewModel
+
+    private var currentLyricText: String {
+        switch lyricsViewModel.state {
+        case .success:
+            if let currentLineIndex = lyricsViewModel.currentLineIndex,
+               lyricsViewModel.lyricLines.indices.contains(currentLineIndex) {
+                return lyricsViewModel.lyricLines[currentLineIndex].text
+            }
+            return ""
+        case .noLyrics, .onlineDisabled, .failed, .candidates:
+            return "暂无歌词，可展开面板进行手动匹配"
+        default:
+            return ""
+        }
+    }
+
+    private var isLyricHintText: Bool {
+        currentLyricText == "暂无歌词，可展开面板进行手动匹配"
+    }
+
+    var body: some View {
+        Text(currentLyricText)
+            .font(.system(size: isLyricHintText ? 8.5 : 9, weight: .regular))
+            .tracking(isLyricHintText ? 0.28 : 0)
+            .foregroundStyle(isLyricHintText ? Color.white.opacity(0.36) : musicAccentColor.opacity(currentLyricText.isEmpty ? 0 : 0.95))
+            .shadow(color: isLyricHintText ? Color.clear : musicAccentColor.opacity(currentLyricText.isEmpty ? 0 : 0.58), radius: 3.5)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, minHeight: 16, maxHeight: 16, alignment: .center)
+            .animation(.easeInOut(duration: 0.18), value: currentLyricText)
     }
 }

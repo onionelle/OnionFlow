@@ -6,6 +6,11 @@ Music 播放列表开关、线上发现、歌词、快捷启动、临时暂存�
 
 ## 正在做
 
+- [ ] compact 系统状态（GPU 温度、风扇使用率、CPU / 内存占用、上下行网速）：
+  - [x] `SystemMetrics` + `SystemMetricsService` 五项读取；CPU / 内存 / 网速 2 秒，GPU 温度 / 风扇 4 秒
+  - [x] ViewModel + App 启动接入
+  - [x] 展开态底部左侧展示 GPU / 风扇 / CPU / 内存，右侧只展示上下行网速；布局开关保持居中。收起态暂不显示
+  - [ ] 设置总开关
 - [ ] 继续观察 compact / expanded 顶部贴边和单层 island 壳体是否稳定，并持续优化微观交互
 - [ ] 临时暂存后续再评估跨启动恢复及 bookmark 持久化策略
 - [ ] Music 后续阶段再评估专辑封面、系统媒体键或更完整资料库
@@ -23,6 +28,18 @@ Music 播放列表开关、线上发现、歌词、快捷启动、临时暂存�
 
 ## 已完成
 
+- [x] 本地诊断日志：
+  - [x] `DiagnosticLogService` + 启动 / 退出 / 未捕获异常写入 + 菜单栏在 Finder 中显示日志
+  - [x] 接入播放失败 / 重试 / 权限、歌词、播放列表、遥控、下载、输出设备、设置窗失败
+  - [x] 设置页诊断日志开关
+- [x] 展开态气氛背景铺满整岛，随 `isExpanded` 淡入淡出；有硬件刘海时顶部黑到透明过渡贴合挖空
+- [x] 动态粒子：切歌加载不拆层；布局开关只改变裁剪高度，不重刷 CALayer
+- [x] 修复本地曲库误报「未找到/不支持」：
+  - [x] 歌词读取、目录扫描和播放列表保存不再对正在播放的音频 URL `stopAccessingSecurityScopedResource`
+  - [x] 播放中途 AVFoundation -11800 / POSIX 35 / OSStatus -66681 视为临时读取中断，重试一次且不写入 `failedLocalURLs`
+- [x] 角色系统只保留 Ghost、Pixel Crab、Pixel Puppy：
+  - [x] 从 `MascotKind`、`MascotView` 和设置页移除小机器人、像素猫、像素恐龙、终端蛙
+  - [x] 删除对应 `Characters/` 角色 View 文件；旧偏好回退为像素小狗
 - [x] 新增默认输出设备恢复：
   - [x] 在局域网遥控网页提供“输出设备”菜单，枚举当前系统可见的输出设备并保存设备 UID
   - [x] 在局域网遥控网页提供“输出设备”菜单和“恢复”按钮

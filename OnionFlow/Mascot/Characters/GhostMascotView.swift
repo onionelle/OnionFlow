@@ -8,18 +8,8 @@ struct GhostMascotView: View {
     var isStatic: Bool = false
 
     var body: some View {
-        if isStatic {
-            Canvas { context, canvasSize in
-                drawFrame(context: &context, size: canvasSize, date: Date(timeIntervalSinceReferenceDate: 0))
-            }
-            .frame(width: size, height: size)
-        } else {
-            TimelineView(.animation) { timeline in
-                Canvas { context, canvasSize in
-                    drawFrame(context: &context, size: canvasSize, date: timeline.date)
-                }
-            }
-            .frame(width: size, height: size)
+        MascotRenderedCanvas(size: size, isStatic: isStatic, state: state, idleAmplitude: 1.2) { context, canvasSize, date in
+            drawFrame(context: &context, size: canvasSize, date: date)
         }
     }
 

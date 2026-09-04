@@ -7,6 +7,10 @@ struct ContentView: View {
     @ObservedObject var musicViewModel: MusicPlayerViewModel
     @ObservedObject var quickLaunchViewModel: QuickLaunchViewModel
     @ObservedObject var temporaryTrayViewModel: TemporaryTrayViewModel
+    @ObservedObject var systemMetricsViewModel: SystemMetricsViewModel
+    @AppStorage("backgroundNebulaEnabled") private var backgroundNebulaEnabled = false
+    @AppStorage("backgroundParticlesEnabled") private var backgroundParticlesEnabled = false
+    @AppStorage("backgroundNebulaTheme") private var backgroundNebulaThemeRawValue = "charcoal"
     // expanded 内容会在收起时卸载；标签状态留在常驻父视图，重新展开后保持用户上次选择。
     @State private var selectedExpandedTab: MusicExpandedView.ExpandedTab = .local
 
@@ -23,32 +27,75 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(width: viewModel.panelWidth, height: viewModel.panelHeight, alignment: .top)
+        .onAppear {
+            musicViewModel.isIslandExpanded = viewModel.isExpanded
+        }
+        .onChange(of: viewModel.isExpanded) { _, isExpanded in
+            musicViewModel.isIslandExpanded = isExpanded
+            if isExpanded {
+                musicViewModel.lyricsViewModel.updateTime(musicViewModel.currentTime)
+            }
+        }
     }
 
     // expanded 内容仍挂在同一个 island 壳体里，避免形成第二层卡片。
     private var expandedLayout: some View {
-        VStack(spacing: 0) {
-            CompactIslandView(
-                viewModel: viewModel,
-                musicViewModel: musicViewModel,
-                onToggleExpansion: toggleIslandExpansion
-            )
+        ZStack(alignment: .top) {
+            if viewModel.isExpanded, backgroundNebulaEnabled || backgroundParticlesEnabled {
+                AntigravityBackgroundView(
+                    isPlaying: musicViewModel.state == .playing,
+                    isLoading: musicViewModel.state == .loading,
+                    showNebula: backgroundNebulaEnabled,
+                    showParticles: backgroundParticlesEnabled,
+                    nebulaTheme: NebulaTheme(rawValue: backgroundNebulaThemeRawValue) ?? .charcoal
+                )
+                .allowsHitTesting(false)
+                .transition(.opacity)
 
-            if viewModel.isExpanded {
-                ExpandedIslandView(
+                if currentScreenHasHardwareNotch {
+                    VStack(spacing: 0) {
+                        LinearGradient(
+                            stops: [
+                                .init(color: .black, location: 0),
+                                .init(color: .black, location: 0.38),
+                                .init(color: .black.opacity(0.42), location: 0.72),
+                                .init(color: .clear, location: 1)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: viewModel.collapsedHeight + 28)
+                        Spacer(minLength: 0)
+                    }
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                }
+            }
+
+            VStack(spacing: 0) {
+                CompactIslandView(
                     viewModel: viewModel,
                     musicViewModel: musicViewModel,
-                    quickLaunchViewModel: quickLaunchViewModel,
-                    temporaryTrayViewModel: temporaryTrayViewModel,
-                    selectedExpandedTab: $selectedExpandedTab,
-                    onCollapse: {
-                        viewModel.collapseIsland()
-                    }
+                    onToggleExpansion: toggleIslandExpansion
                 )
-                .transition(expandedPanelTransition)
+
+                if viewModel.isExpanded {
+                    ExpandedIslandView(
+                        viewModel: viewModel,
+                        musicViewModel: musicViewModel,
+                        quickLaunchViewModel: quickLaunchViewModel,
+                        temporaryTrayViewModel: temporaryTrayViewModel,
+                        systemMetricsViewModel: systemMetricsViewModel,
+                        selectedExpandedTab: $selectedExpandedTab,
+                        onCollapse: {
+                            viewModel.collapseIsland()
+                        }
+                    )
+                    .transition(expandedPanelTransition)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var islandOpenAnimation: Animation {
@@ -87,12 +134,7 @@ struct ContentView: View {
     }
 
     private var expandedPanelTransition: AnyTransition {
-        .asymmetric(
-            insertion: .opacity,
-            removal: .offset(y: -6)
-                .combined(with: .blurFade)
-                .combined(with: .opacity)
-        )
+        .opacity
     }
 
     private var islandShape: some InsettableShape {
@@ -102,9 +144,20 @@ struct ContentView: View {
         )
     }
 
+    /// 左右菜单栏被摄像头挖空隔开时，说明当前屏有硬件刘海。
+    private var currentScreenHasHardwareNotch: Bool {
+        let mouseLocation = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(mouseLocation) } ?? NSScreen.main
+        guard let screen else { return false }
+        guard let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea else {
+            return false
+        }
+        return left.width > 0 && right.width > 0 && left.maxX + 8 < right.minX
+    }
+
     private func islandContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         ZStack {
-            // 背景层：保持单层黑色壳体，并仅在展开态绘制外侧投影以强化层次。
+            // 背景层：单层壳体。展开且开启星云/粒子时铺满整岛，避免 compact 顶栏和下方气氛背景切成两层。
             islandShape
                 .fill(Color.black)
                 .shadow(
@@ -153,7 +206,8 @@ extension AnyTransition {
         viewModel: IslandViewModel(),
         musicViewModel: MusicPlayerViewModel(restoresPlaylistOnInit: false),
         quickLaunchViewModel: QuickLaunchViewModel(),
-        temporaryTrayViewModel: TemporaryTrayViewModel()
+        temporaryTrayViewModel: TemporaryTrayViewModel(),
+        systemMetricsViewModel: SystemMetricsViewModel()
     )
     .padding()
     .background(Color.gray.opacity(0.3))

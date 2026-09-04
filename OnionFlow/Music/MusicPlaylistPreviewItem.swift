@@ -2,28 +2,68 @@ import AppKit
 import SwiftUI
 
 struct PulseDot: View {
-    @State private var scale: CGFloat = 1
-    @State private var opacity: Double = 0.8
-
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(musicAccentColor)
-                .frame(width: 5, height: 5)
+        PulseDotLayerView()
+            .frame(width: 10, height: 10)
+    }
+}
 
-            Circle()
-                .stroke(musicAccentColor, lineWidth: 1.5)
-                .frame(width: 9, height: 9)
-                .scaleEffect(scale)
-                .opacity(opacity)
-                .onAppear {
-                    withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: false)) {
-                        scale = 1.6
-                        opacity = 0
-                    }
-                }
-        }
-        .frame(width: 10, height: 10)
+/// SwiftUI repeatForever 会按屏幕刷新重绘父级列表；脉冲改走 CALayer。
+private struct PulseDotLayerView: NSViewRepresentable {
+    func makeNSView(context: Context) -> PulseDotNSView {
+        PulseDotNSView()
+    }
+
+    func updateNSView(_ nsView: PulseDotNSView, context: Context) {}
+}
+
+private final class PulseDotNSView: NSView {
+    private let coreLayer = CALayer()
+    private let ringLayer = CALayer()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        let accent = NSColor(red: 0.16, green: 0.82, blue: 0.50, alpha: 1)
+        coreLayer.backgroundColor = accent.cgColor
+        ringLayer.borderColor = accent.cgColor
+        ringLayer.borderWidth = 1.5
+        ringLayer.backgroundColor = NSColor.clear.cgColor
+        layer?.addSublayer(coreLayer)
+        layer?.addSublayer(ringLayer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        let bounds = self.bounds
+        coreLayer.frame = CGRect(x: (bounds.width - 5) / 2, y: (bounds.height - 5) / 2, width: 5, height: 5)
+        coreLayer.cornerRadius = 2.5
+        ringLayer.frame = CGRect(x: (bounds.width - 9) / 2, y: (bounds.height - 9) / 2, width: 9, height: 9)
+        ringLayer.cornerRadius = 4.5
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        ringLayer.removeAnimation(forKey: "pulse")
+        guard window != nil else { return }
+        let scale = CABasicAnimation(keyPath: "transform.scale")
+        scale.fromValue = 1
+        scale.toValue = 1.6
+        let opacity = CABasicAnimation(keyPath: "opacity")
+        opacity.fromValue = 0.85
+        opacity.toValue = 0
+        let group = CAAnimationGroup()
+        group.animations = [scale, opacity]
+        group.duration = 1.5
+        group.repeatCount = .infinity
+        group.isRemovedOnCompletion = false
+        ringLayer.add(group, forKey: "pulse")
     }
 }
 
@@ -80,7 +120,7 @@ struct MusicPlaylistPreviewItem: View {
                                 .frame(width: 8)
                         } else {
                             Text("\(index + 1)")
-                                .font(.system(size: 9.2, weight: .regular, design: .monospaced))
+                                .font(.system(size: 8, weight: .regular, design: .monospaced))
                                 .italic()
                                 .foregroundStyle(isFailed ? failureColor.opacity(0.48) : Color.white.opacity(0.30))
                         }
@@ -89,14 +129,14 @@ struct MusicPlaylistPreviewItem: View {
 
                     let trackInfo = parsedTrackInfo
                     Text(trackInfo.title)
-                        .font(.system(size: 9.8, weight: .regular))
+                        .font(.system(size: 9, weight: .regular))
                         .foregroundStyle(isFailed ? failureColor.opacity(0.68) : (isCurrentTrack ? musicAccentColor : Color.white.opacity(0.64)))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     
                     if let artist = trackInfo.artist {
                         Text("- " + artist)
-                            .font(.system(size: 9.8, weight: .regular))
+                            .font(.system(size: 9, weight: .regular))
                             .foregroundStyle(isFailed ? failureColor.opacity(0.35) : Color.white.opacity(0.30))
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -104,7 +144,7 @@ struct MusicPlaylistPreviewItem: View {
 
                     if isFailed {
                         Text(" [未找到/不支持]")
-                            .font(.system(size: 8.5, weight: .semibold))
+                            .font(.system(size: 9, weight: .regular))
                             .foregroundStyle(failureColor.opacity(0.75))
                     }
 

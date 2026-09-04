@@ -62,15 +62,15 @@ struct MusicPlaylistPanelView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "music.note.list")
-                                .font(.system(size: 10))
+                                .font(.system(size: 9, weight: .regular))
                                 .foregroundStyle(isPlaylistHovered ? musicAccentColor : (selectedTab == .local ? musicAccentColor : .white.opacity(0.48)))
                             Text("本地曲库")
-                                .font(.system(size: 11, weight: .regular))
+                                .font(.system(size: 9, weight: .regular))
                                 .foregroundStyle(isPlaylistHovered ? musicAccentColor : (selectedTab == .local ? musicAccentColor : .white.opacity(0.48)))
 
                             if !musicViewModel.playlist.isEmpty {
                                 Text("\(musicViewModel.playlist.count)")
-                                    .font(.system(size: 8.5, weight: .regular, design: .monospaced))
+                                    .font(.system(size: 9, weight: .regular, design: .monospaced))
                                     .foregroundStyle(selectedTab == .local ? musicAccentColor : .white.opacity(0.4))
                                     .padding(.horizontal, 4.5)
                                     .padding(.vertical, 0.5)
@@ -95,10 +95,10 @@ struct MusicPlaylistPanelView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "globe")
-                                .font(.system(size: 10))
+                                .font(.system(size: 9, weight: .regular))
                                 .foregroundStyle(isOnlineHovered ? musicAccentColor : (selectedTab == .online ? musicAccentColor : .white.opacity(0.48)))
                             Text("线上发现")
-                                .font(.system(size: 11, weight: .regular))
+                                .font(.system(size: 9, weight: .regular))
                                 .foregroundStyle(isOnlineHovered ? musicAccentColor : (selectedTab == .online ? musicAccentColor : .white.opacity(0.48)))
                         }
                     }
@@ -118,10 +118,10 @@ struct MusicPlaylistPanelView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "quote.bubble")
-                                .font(.system(size: 10))
+                                .font(.system(size: 9, weight: .regular))
                                 .foregroundStyle(isLyricsHovered ? musicAccentColor : (selectedTab == .lyrics ? musicAccentColor : .white.opacity(0.48)))
                             Text("歌词")
-                                .font(.system(size: 11, weight: .regular))
+                                .font(.system(size: 9, weight: .regular))
                                 .foregroundStyle(isLyricsHovered ? musicAccentColor : (selectedTab == .lyrics ? musicAccentColor : .white.opacity(0.48)))
                         }
                     }
@@ -184,17 +184,18 @@ struct MusicPlaylistPanelView: View {
                     if isSearchVisible {
                         HStack {
                             Image(systemName: "magnifyingglass")
-                                .font(.system(size: 10, weight: .regular))
+                                .font(.system(size: 10, weight: .light))
                                 .foregroundStyle(Color.white.opacity(0.4))
                             ZStack(alignment: .leading) {
                                 if searchText.isEmpty {
                                     Text("模糊搜索...")
-                                        .font(.system(size: 9.8, weight: .regular))
-                                        .foregroundColor(.white.opacity(0.35))
+                                        .font(.system(size: 9, weight: .regular))
+                                        .tracking(0.28)
+                                        .foregroundColor(.white.opacity(0.28))
                                 }
                                 TextField("", text: $searchText)
                                     .textFieldStyle(.plain)
-                                    .font(.system(size: 9.8, weight: .regular))
+                                    .font(.system(size: 9, weight: .regular))
                                     .foregroundColor(.white.opacity(0.85))
                                     .focused($isSearchFocused)
                                     .onSubmit {
@@ -211,7 +212,7 @@ struct MusicPlaylistPanelView: View {
                                     isSearchFocused = true
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 10))
+                                        .font(.system(size: 9, weight: .regular))
                                         .foregroundStyle(Color.white.opacity(0.4))
                                 }
                                 .buttonStyle(.plain)
@@ -303,19 +304,12 @@ struct MusicPlaylistPanelView: View {
     }
 
     private var emptyPlaylistRow: some View {
-        VStack(spacing: 6) {
-            Image(systemName: "tray.and.arrow.down")
-                .font(.system(size: 16, weight: .regular))
-                .foregroundStyle(Color.white.opacity(0.42))
-            VStack(spacing: 2) {
-                Text("拖拽歌曲或文件夹到此区域")
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(Color.white.opacity(0.68))
-                Text("也可以点击右上方添加歌曲")
-                    .font(.system(size: 9.5, weight: .regular))
-                    .foregroundStyle(Color.white.opacity(0.38))
-            }
-        }
+        IslandEmptyHint(
+            title: "拖拽歌曲或文件夹到此区域",
+            subtitle: "也可以点击右上方添加歌曲",
+            icon: "tray.and.arrow.down",
+            isHighlighted: musicViewModel.isDropTargeted
+        )
         .frame(maxWidth: .infinity, minHeight: previewHeight)
     }
 

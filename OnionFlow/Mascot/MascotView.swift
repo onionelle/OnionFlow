@@ -16,13 +16,10 @@ struct MascotView: View {
 
     var body: some View {
         switch kind {
-        case .robot:        RobotMascotView(state: state, size: size, isStatic: isStatic)
         case .ghost:        GhostMascotView(state: state, size: size, isStatic: isStatic)
+        case .pixelGhost:   PixelGhostMascotView(state: state, size: size, isStatic: isStatic)
         case .pixelCrab:    PixelCrabMascotView(state: state, size: size, isStatic: isStatic)
         case .pixelPuppy:   PixelPuppyMascotView(state: state, size: size, isStatic: isStatic)
-        case .pixelCat:     PixelCatMascotView(state: state, size: size, isStatic: isStatic)
-        case .pixelDino:    PixelDinoMascotView(state: state, size: size, isStatic: isStatic)
-        case .pixelFrog:    PixelFrogMascotView(state: state, size: size, isStatic: isStatic)
         }
     }
 }

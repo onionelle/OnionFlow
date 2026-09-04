@@ -37,7 +37,17 @@ struct CompactIslandView: View {
                 musicViewModel: musicViewModel
             )
         } else {
-            CompactMusicActivityIndicator(musicViewModel: musicViewModel)
+            CompactMusicActivityIndicator(
+                isPlaying: musicViewModel.state == .playing,
+                hasMusicContext: {
+                    switch musicViewModel.state {
+                    case .playing, .paused, .loading:
+                        return true
+                    case .idle, .failed:
+                        return false
+                    }
+                }()
+            )
                 .allowsHitTesting(false)
         }
     }
@@ -60,9 +70,7 @@ struct CompactIslandView: View {
     }
 
     private var mascotState: MascotState {
-        if musicViewModel.state == .playing {
-            return .music
-        }
-        return viewModel.isExpanded ? .working : .idle
+        // 未播放保持 idle：呼吸走 CALayer，避免 working / music 的 Canvas 时间轴常驻。
+        musicViewModel.state == .playing ? .music : .idle
     }
 }

@@ -22,26 +22,77 @@ enum AudioOutputDeviceService {
 
     @discardableResult
     static func selectOutputDevice(uid: String) -> Bool {
-        guard !uid.isEmpty,
-              let deviceID = allDeviceIDs().first(where: { stringProperty(kAudioDevicePropertyDeviceUID, on: $0) == uid }) else {
-            return false
-        }
-        setDefaultOutputDevice(deviceID, selector: kAudioHardwarePropertyDefaultOutputDevice)
-        setDefaultOutputDevice(deviceID, selector: kAudioHardwarePropertyDefaultSystemOutputDevice)
-        return true
+        restoreAttempt(uid: uid).succeeded
     }
 
     static func restorePreferredOutputDevice(uid: String) {
         guard !uid.isEmpty else { return }
-        
+
         Task { @MainActor in
+            var lastAttempt = RestoreAttempt(succeeded: false, reason: "not_attempted", visibleDevices: [])
             for delay in [1.0, 3.0, 6.0, 10.0] {
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                if selectOutputDevice(uid: uid) {
+                lastAttempt = restoreAttempt(uid: uid)
+                if lastAttempt.succeeded {
                     return
                 }
             }
+            logRestoreFailure(uid: uid, attempt: lastAttempt)
         }
+    }
+
+    private struct RestoreAttempt {
+        let succeeded: Bool
+        let reason: String
+        let visibleDevices: [AudioOutputDevice]
+        var setDefaultStatus: String = ""
+    }
+
+    private static func restoreAttempt(uid: String) -> RestoreAttempt {
+        guard !uid.isEmpty else {
+            return RestoreAttempt(succeeded: false, reason: "empty_uid", visibleDevices: [])
+        }
+        let visible = outputDevices()
+        guard let deviceID = allDeviceIDs().first(where: { stringProperty(kAudioDevicePropertyDeviceUID, on: $0) == uid }) else {
+            return RestoreAttempt(
+                succeeded: false,
+                reason: visible.isEmpty ? "coreaudio_list_empty" : "uid_not_in_coreaudio",
+                visibleDevices: visible
+            )
+        }
+        let outputStatus = setDefaultOutputDevice(deviceID, selector: kAudioHardwarePropertyDefaultOutputDevice)
+        let systemStatus = setDefaultOutputDevice(deviceID, selector: kAudioHardwarePropertyDefaultSystemOutputDevice)
+        if outputStatus == noErr && systemStatus == noErr {
+            return RestoreAttempt(succeeded: true, reason: "ok", visibleDevices: visible)
+        }
+        return RestoreAttempt(
+            succeeded: false,
+            reason: "set_default_failed",
+            visibleDevices: visible,
+            setDefaultStatus: "output=\(outputStatus),system=\(systemStatus)"
+        )
+    }
+
+    private static func logRestoreFailure(uid: String, attempt: RestoreAttempt) {
+        let address = uid.split(separator: ":").first.map(String.init) ?? uid
+        let bluetooth = pairedBluetoothAudioDevices().first { $0.address.caseInsensitiveCompare(address) == .orderedSame }
+        var fields = [
+            "uid": uid,
+            "reason": attempt.reason,
+            "coreAudioCount": String(attempt.visibleDevices.count),
+            "coreAudioDevices": attempt.visibleDevices.map { "\($0.name)[\($0.id)]" }.joined(separator: "; ")
+        ]
+        if !attempt.setDefaultStatus.isEmpty {
+            fields["osStatus"] = attempt.setDefaultStatus
+        }
+        if let bluetooth {
+            fields["bluetoothPaired"] = "true"
+            fields["bluetoothConnected"] = bluetooth.isConnected ? "true" : "false"
+            fields["bluetoothName"] = bluetooth.name
+        } else {
+            fields["bluetoothPaired"] = "false"
+        }
+        DiagnosticLogService.shared.log("audio.output.restore_failed", fields)
     }
 
     static func pairedBluetoothAudioDevices() -> [(address: String, name: String, isConnected: Bool)] {
@@ -147,14 +198,15 @@ enum AudioOutputDeviceService {
         return string.isEmpty ? nil : string
     }
 
-    private static func setDefaultOutputDevice(_ deviceID: AudioDeviceID, selector: AudioObjectPropertySelector) {
+    @discardableResult
+    private static func setDefaultOutputDevice(_ deviceID: AudioDeviceID, selector: AudioObjectPropertySelector) -> OSStatus {
         var address = AudioObjectPropertyAddress(
             mSelector: selector,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
         var outputDeviceID = deviceID
-        AudioObjectSetPropertyData(
+        return AudioObjectSetPropertyData(
             AudioObjectID(kAudioObjectSystemObject),
             &address,
             0,

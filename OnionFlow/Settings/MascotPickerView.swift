@@ -43,6 +43,7 @@ struct MascotPickerView: View {
     @AppStorage("spectrumStyle") private var spectrumStyle = "columns"
     @AppStorage("NeteaseCookie") private var neteaseCookie = ""
     @AppStorage("PlaybackTimeoutSeconds") private var playbackTimeoutSeconds = 20.0
+    @AppStorage("diagnosticLoggingEnabled") private var diagnosticLoggingEnabled = true
 
     @State private var hoveredKind: MascotKind? = nil
     @State private var hoveredStyle: SpectrumStyle? = nil
@@ -53,7 +54,12 @@ struct MascotPickerView: View {
         NebulaTheme(rawValue: backgroundNebulaThemeRawValue) ?? .charcoal
     }
 
-    // 4列自适应弹性网格布局，完美填满内容区，使左右边缘与偏好设置卡片完全对齐
+    private let mascotColumns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12)
+    ]
     private let columns = [
         GridItem(.flexible(), spacing: 12),
         GridItem(.flexible(), spacing: 12),
@@ -72,12 +78,12 @@ struct MascotPickerView: View {
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Onion 设置")
-                                .font(.system(size: 15, weight: .bold))
+                                .font(IslandTypography.display)
                                 .foregroundStyle(.white)
 
                             Text("个性化角色、外观与播放器功能")
-                                .font(.system(size: 10.5, weight: .regular))
-                                .foregroundStyle(.white.opacity(0.55))
+                                .font(IslandTypography.body)
+                                            .foregroundStyle(.white.opacity(0.36))
                         }
                         .allowsHitTesting(false)
                     }
@@ -91,14 +97,14 @@ struct MascotPickerView: View {
 
                 // 角色选择标题
                 Text("常驻角色")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(IslandTypography.caption)
                     .foregroundStyle(.white.opacity(0.35))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, 4)
                     .padding(.leading, 2)
 
                 // 角色数量变化后让网格和外层 NSPanel 跟随内容自然收缩。
-                LazyVGrid(columns: columns, spacing: 10) {
+                LazyVGrid(columns: mascotColumns, spacing: 10) {
                     ForEach(MascotKind.allCases, id: \.rawValue) { kind in
                         mascotCard(for: kind)
                     }
@@ -108,7 +114,7 @@ struct MascotPickerView: View {
 
                 // 频谱选择标题
                 Text("频谱视觉风格")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(IslandTypography.caption)
                     .foregroundStyle(.white.opacity(0.35))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, 4)
@@ -138,7 +144,7 @@ struct MascotPickerView: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("偏好设置")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(IslandTypography.caption)
                         .foregroundStyle(.white.opacity(0.35))
                         .padding(.bottom, 4)
                         .padding(.leading, 2)
@@ -184,13 +190,18 @@ struct MascotPickerView: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("性能与效果")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(IslandTypography.caption)
                         .foregroundStyle(.white.opacity(0.35))
                         .padding(.bottom, 4)
                         .padding(.leading, 2)
 
                     VStack(spacing: 0) {
                         dynamicParticlesSection
+
+                        Divider()
+                            .background(Color.white.opacity(0.08))
+
+                        diagnosticLoggingSection
                     }
                     .padding(.horizontal, 12)
                     .background(Color.black.opacity(0.2))
@@ -287,17 +298,17 @@ struct MascotPickerView: View {
                     .frame(width: 28, height: 28)
 
                 Image(systemName: "paintpalette")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(IslandTypography.body)
                     .foregroundStyle(Color(red: 0.16, green: 0.82, blue: 0.50))
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("氛围背景")
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(IslandTypography.body)
                     .foregroundStyle(.white.opacity(0.85))
 
                 Text("展开时展示渐变氛围背景")
-                    .font(.system(size: 9, weight: .regular))
+                    .font(IslandTypography.caption)
                     .foregroundStyle(.white.opacity(0.42))
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
@@ -341,17 +352,17 @@ struct MascotPickerView: View {
                     .frame(width: 28, height: 28)
 
                 Image(systemName: "network")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(IslandTypography.body)
                     .foregroundStyle(Color(red: 0.18, green: 0.68, blue: 0.90))
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("联网匹配歌词")
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(IslandTypography.body)
                     .foregroundStyle(.white.opacity(0.85))
 
                 Text("无本地歌词时允许在线搜索")
-                    .font(.system(size: 9, weight: .regular))
+                    .font(IslandTypography.caption)
                     .foregroundStyle(.white.opacity(0.42))
             }
 
@@ -374,17 +385,17 @@ struct MascotPickerView: View {
                     .frame(width: 28, height: 28)
 
                 Image(systemName: "candybarphone")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(IslandTypography.body)
                     .foregroundStyle(Color(red: 0.95, green: 0.60, blue: 0.20))
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("网页遥控服务端")
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(IslandTypography.body)
                     .foregroundStyle(.white.opacity(0.85))
 
                 Text("开启后可通过浏览器远程控制播放器")
-                    .font(.system(size: 9, weight: .regular))
+                    .font(IslandTypography.caption)
                     .foregroundStyle(.white.opacity(0.42))
             }
 
@@ -408,18 +419,18 @@ struct MascotPickerView: View {
                         .frame(width: 28, height: 28)
 
                     Image(systemName: "folder.badge.plus")
-                        .font(.system(size: 11.5, weight: .bold))
+                        .font(IslandTypography.body)
                         .foregroundStyle(Color(red: 0.90, green: 0.35, blue: 0.50))
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("自动监听目录")
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .font(IslandTypography.body)
                         .foregroundStyle(.white.opacity(0.85))
 
                     Text("后台自动发现并导入新歌曲")
-                        .font(.system(size: 9, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.42))
+                        .font(IslandTypography.caption)
+                            .foregroundStyle(.white.opacity(0.42))
                 }
 
                 Spacer()
@@ -435,7 +446,7 @@ struct MascotPickerView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     TextField("监听路径 (如 ~/Music)", text: $editingListenPath)
                         .textFieldStyle(PlainTextFieldStyle())
-                        .font(.system(size: 9))
+                        .font(IslandTypography.caption)
                         .foregroundStyle(.white.opacity(0.55))
                         .padding(.vertical, 3)
                         .padding(.horizontal, 6)
@@ -451,11 +462,11 @@ struct MascotPickerView: View {
                     
                     if isListenPathValid {
                         Text("✓ 路径有效，已自动保存")
-                            .font(.system(size: 9))
+                            .font(IslandTypography.caption)
                             .foregroundStyle(Color(red: 0.16, green: 0.82, blue: 0.50))
                     } else {
                         Text("✗ 目录不存在或不是文件夹")
-                            .font(.system(size: 9))
+                            .font(IslandTypography.caption)
                             .foregroundStyle(Color.red.opacity(0.8))
                     }
                 }
@@ -495,19 +506,19 @@ struct MascotPickerView: View {
                         .fill(Color(red: 0.90, green: 0.20, blue: 0.20).opacity(0.1))
                         .frame(width: 28, height: 28)
 
-                    Image(systemName: "music.note.network")
-                        .font(.system(size: 11.5, weight: .bold))
+                    Image(systemName: "music.note")
+                        .font(IslandTypography.body)
                         .foregroundStyle(Color(red: 0.90, green: 0.20, blue: 0.20))
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("网易云 Cookie")
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .font(IslandTypography.body)
                         .foregroundStyle(.white.opacity(0.85))
 
                     Text("用于获取无损音质与私人推荐，留空则仅获取公开数据")
-                        .font(.system(size: 9, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.42))
+                        .font(IslandTypography.caption)
+                            .foregroundStyle(.white.opacity(0.42))
                 }
 
                 Spacer()
@@ -516,7 +527,7 @@ struct MascotPickerView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 TextEditor(text: $neteaseCookie)
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(IslandTypography.mono)
                     .foregroundStyle(.white.opacity(0.7))
                     .scrollContentBackground(.hidden)
                     .padding(4)
@@ -546,17 +557,17 @@ struct MascotPickerView: View {
                     .frame(width: 28, height: 28)
 
                 Image(systemName: "sparkles")
-                    .font(.system(size: 11.5, weight: .bold))
+                    .font(IslandTypography.body)
                     .foregroundStyle(Color(red: 0.16, green: 0.82, blue: 0.50))
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("动态粒子")
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(IslandTypography.body)
                     .foregroundStyle(.white.opacity(0.85))
 
                 Text("展开时展示漂浮粒子，关闭可降低 GPU 占用")
-                    .font(.system(size: 9, weight: .regular))
+                    .font(IslandTypography.caption)
                     .foregroundStyle(.white.opacity(0.42))
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
@@ -572,6 +583,41 @@ struct MascotPickerView: View {
         .padding(.vertical, 6)
     }
 
+    @ViewBuilder
+    private var diagnosticLoggingSection: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(red: 0.62, green: 0.70, blue: 0.82).opacity(0.1))
+                    .frame(width: 28, height: 28)
+
+                Image(systemName: "doc.text")
+                    .font(IslandTypography.body)
+                    .foregroundStyle(Color(red: 0.62, green: 0.70, blue: 0.82))
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("诊断日志")
+                    .font(IslandTypography.body)
+                    .foregroundStyle(.white.opacity(0.85))
+
+                Text("记录播放、权限和崩溃等到本地文件，关闭后不再写入")
+                    .font(IslandTypography.caption)
+                    .foregroundStyle(.white.opacity(0.42))
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $diagnosticLoggingEnabled)
+                .toggleStyle(SwitchToggleStyle(tint: Color(red: 0.62, green: 0.70, blue: 0.82)))
+                .labelsHidden()
+                .scaleEffect(0.8)
+        }
+        .padding(.vertical, 6)
+    }
+
     // ==========================================
     // 角色与辅助颜色
     // ==========================================
@@ -581,7 +627,7 @@ struct MascotPickerView: View {
     private func mascotCard(for kind: MascotKind) -> some View {
         let selected = selectedKindRawValue == kind.rawValue
         let isHovered = hoveredKind == kind
-        let shouldAnimatePreview = selected || isHovered
+        let shouldAnimatePreview = isHovered
         let themeColor = glowColor(for: kind)
 
         VStack(spacing: 3) {
@@ -597,7 +643,7 @@ struct MascotPickerView: View {
             .padding(.top, 5)
 
             Text(kind.displayName)
-                .font(.system(size: 9.5, weight: .semibold))
+                .font(IslandTypography.body)
                 .foregroundStyle(selected ? themeColor : .white.opacity(0.80))
                 .padding(.bottom, 4)
         }
@@ -636,62 +682,108 @@ struct MascotPickerView: View {
     /// Mascot 对应主色调，用于卡片边框、高亮名称 and 独特的散射阴影
     private func glowColor(for kind: MascotKind) -> Color {
         switch kind {
-        case .robot:
-            return Color(red: 0.16, green: 0.82, blue: 0.50) // 霓虹荧光绿
         case .ghost:
             return Color(red: 0.68, green: 0.45, blue: 0.90) // 幽暗魔力紫
+        case .pixelGhost:
+            return Color(red: 0.55, green: 0.82, blue: 1.0) // 冰蓝像素光
         case .pixelCrab:
             return Color(red: 0.98, green: 0.36, blue: 0.26) // 复古红橘色
         case .pixelPuppy:
             return Color(red: 0.90, green: 0.65, blue: 0.28) // 太妃金黄色
-        case .pixelCat:
-            return Color(red: 0.98, green: 0.58, blue: 0.36) // 蜜桃橘
-        case .pixelDino:
-            return Color(red: 0.22, green: 0.75, blue: 0.36) // 仙人掌绿
-        case .pixelFrog:
-            return Color(red: 0.18, green: 0.88, blue: 0.68) // 薄荷青
         }
     }
 
     @ViewBuilder
     private var playbackTimeoutSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.orange.opacity(0.1))
-                        .frame(width: 28, height: 28)
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.orange.opacity(0.1))
+                    .frame(width: 28, height: 28)
 
-                    Image(systemName: "timer")
-                        .font(.system(size: 11.5, weight: .bold))
-                        .foregroundStyle(Color.orange)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("网络连接超时")
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.85))
-
-                    Text("在线播放及缓冲的等待时间限制")
-                        .font(.system(size: 9, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.42))
-                }
-
-                Spacer()
-
-                HStack(spacing: 8) {
-                    Slider(value: $playbackTimeoutSeconds, in: 10...120, step: 1.0)
-                        .frame(width: 100)
-                    Text("\(Int(playbackTimeoutSeconds))秒")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .frame(width: 30, alignment: .trailing)
-                }
+                Image(systemName: "timer")
+                    .font(IslandTypography.body)
+                    .foregroundStyle(Color.orange)
             }
-            .padding(.vertical, 6)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("网络连接超时")
+                    .font(IslandTypography.body)
+                    .foregroundStyle(.white.opacity(0.85))
+
+                Text("在线播放及缓冲的等待时间限制")
+                    .font(IslandTypography.caption)
+                    .foregroundStyle(.white.opacity(0.42))
+            }
+
+            Spacer(minLength: 8)
+
+            CompactSettingsSlider(
+                value: $playbackTimeoutSeconds,
+                range: 10...120,
+                step: 1,
+                tint: Color.orange
+            )
+
+            Text("\(Int(playbackTimeoutSeconds))秒")
+                .font(IslandTypography.mono)
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(width: 36, alignment: .trailing)
         }
+        .padding(.vertical, 6)
     }
 
+}
+
+/// 设置行内的细滑条，避开系统 Slider 过大圆钮破坏单行节奏。
+private struct CompactSettingsSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let tint: Color
+
+    private let thumbSize: CGFloat = 10
+    private let trackHeight: CGFloat = 3
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let progress = CGFloat((value - range.lowerBound) / (range.upperBound - range.lowerBound))
+            let travel = max(width - thumbSize, 0)
+            let x = travel * min(max(progress, 0), 1)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.white.opacity(0.12))
+                    .frame(height: trackHeight)
+                Capsule()
+                    .fill(tint)
+                    .frame(width: x + thumbSize / 2, height: trackHeight)
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: thumbSize, height: thumbSize)
+                    .shadow(color: .black.opacity(0.28), radius: 1, y: 0.5)
+                    .offset(x: x)
+            }
+            .frame(width: width, height: proxy.size.height)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { drag in
+                        update(at: drag.location.x, width: width)
+                    }
+            )
+        }
+        .frame(width: 76, height: 22)
+    }
+
+    private func update(at locationX: CGFloat, width: CGFloat) {
+        let travel = max(width - thumbSize, 1)
+        let clamped = min(max(locationX - thumbSize / 2, 0), travel) / travel
+        let raw = range.lowerBound + Double(clamped) * (range.upperBound - range.lowerBound)
+        let stepped = (raw / step).rounded() * step
+        value = min(max(stepped, range.lowerBound), range.upperBound)
+    }
 }
 
 /// 频谱样式单卡组件 - 独立 Struct 完美突破 Swift 复杂布局的类型检测瓶颈
@@ -703,7 +795,7 @@ struct SpectrumStyleCard: View {
     var body: some View {
         let selected = spectrumStyle == style.rawValue
         let isHovered = hoveredStyle == style
-        let shouldAnimatePreview = selected || isHovered
+        let shouldAnimatePreview = isHovered
         let themeColor = Color(red: 0.16, green: 0.82, blue: 0.50) // 频谱专属翡翠绿
 
         let cardContent = VStack(spacing: 3) {
@@ -718,7 +810,7 @@ struct SpectrumStyleCard: View {
             .padding(.top, 5)
 
             Text(style.displayName)
-                .font(.system(size: 9.5, weight: .semibold))
+                .font(IslandTypography.body)
                 .foregroundStyle(selected ? themeColor : .white.opacity(0.80))
                 .padding(.bottom, 4)
         }
@@ -765,7 +857,7 @@ struct SpectrumPreviewView: View {
     var body: some View {
         Group {
             if isAnimated {
-                TimelineView(.periodic(from: Date(), by: 1.0 / 30.0)) { timeline in
+                TimelineView(.periodic(from: Date(), by: 1.0 / 12.0)) { timeline in
                     previewCanvas(for: style, time: timeline.date.timeIntervalSinceReferenceDate)
                 }
             } else {
@@ -927,7 +1019,7 @@ private struct CloseButton: View {
                     .frame(width: 20, height: 20)
 
                 Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(IslandTypography.caption)
                     .foregroundStyle(isHovered ? .white : Color.white.opacity(0.40))
             }
         }

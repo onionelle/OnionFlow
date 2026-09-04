@@ -65,12 +65,7 @@ struct MusicDirectoryScanner {
         return type.conforms(to: .audio)
     }
     private func isRegularFile(_ url: URL) -> Bool {
-        let didStartAccess = url.startAccessingSecurityScopedResource()
-        defer {
-            if didStartAccess {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
+        // 目录扫描已在上层持有文件夹权限；不要对单文件再 stop 沙盒访问，以免掐掉正在播放的同一路径。
         guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey]) else { return false }
         return values.isRegularFile == true
     }

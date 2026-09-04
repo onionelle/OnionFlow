@@ -82,20 +82,15 @@ struct MusicLyricsView: View {
                                     .frame(width: 3, height: 3)
                             }
                             .frame(height: 14)
-                            .shadow(color: isActive ? musicAccentColor.opacity(0.35) : .clear, radius: 4)
                             .scaleEffect(isActive ? 1.15 : 1.0)
-                            .animation(.spring(response: 0.28, dampingFraction: 0.8), value: isActive)
                             .id(index)
                         } else {
                             let isLongLine = line.text.count > 38
                             Text(line.text)
-                                .font(.system(size: isActive ? 11.8 : 9.8, weight: .regular))
+                                .font(.system(size: isActive ? 11 : 9, weight: .regular))
                                 .foregroundStyle(isActive ? musicAccentColor : .white.opacity(0.48))
-                                .shadow(color: isActive ? musicAccentColor.opacity(0.35) : .clear, radius: 6)
-                                .scaleEffect(isActive ? 1.04 : 1.0)
                                 .lineLimit(isActive ? nil : (isLongLine ? 1 : nil))
                                 .truncationMode(.tail)
-                                .animation(.spring(response: 0.28, dampingFraction: 0.8), value: isActive)
                                 .frame(maxWidth: .infinity, alignment: .center)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, 24)
@@ -133,8 +128,9 @@ struct MusicLyricsView: View {
         VStack(spacing: 4) {
             HStack {
                 Text("请选择匹配的在线歌词")
-                    .font(.system(size: 9.5, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.52))
+                    .font(.system(size: 9, weight: .regular))
+                    .tracking(0.28)
+                    .foregroundStyle(.white.opacity(0.36))
                 Spacer()
                 if lyricsViewModel.canCancelCandidateSelection {
                     actionButton(title: "返回", action: onCancelSelection)
@@ -152,7 +148,7 @@ struct MusicLyricsView: View {
                         } label: {
                             HStack(spacing: 8) {
                                 Text(candidate.title)
-                                    .font(.system(size: 10.5, weight: .regular))
+                                    .font(.system(size: 9, weight: .regular))
                                     .foregroundStyle(.white.opacity(0.82))
                                     .lineLimit(1)
                                 Text(candidate.detailText)
@@ -179,14 +175,16 @@ struct MusicLyricsView: View {
                 .colorScheme(.dark)
 
             Text(lyricsViewModel.isSlowLoading ? "正在获取同步歌词 (网络较慢，请稍候 \(lyricsViewModel.loadingCountdown)s)..." : "正在获取同步歌词...")
-                .font(.system(size: 10.5, weight: .regular))
-                .foregroundStyle(Color.white.opacity(0.55))
+                .font(.system(size: 9, weight: .regular))
+                .tracking(0.28)
+                .foregroundStyle(Color.white.opacity(0.36))
 
             if lyricsViewModel.isSlowLoading {
                 VStack(spacing: 4) {
                     Text("提示：若网络较慢，您也可以导入本地 LRC 歌词")
-                        .font(.system(size: 9))
-                        .foregroundStyle(Color.white.opacity(0.32))
+                        .font(.system(size: 8, weight: .regular))
+                        .tracking(0.22)
+                        .foregroundStyle(Color.white.opacity(0.22))
 
                     Button("导入本地歌词", action: onChooseLocalLyrics)
                         .font(.system(size: 9, weight: .regular))
@@ -214,17 +212,11 @@ struct MusicLyricsView: View {
         secondaryAction: (() -> Void)? = nil
     ) -> some View {
         VStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(Color.white.opacity(0.38))
-            Text(title)
-                .font(.system(size: 10.5, weight: .regular))
-                .foregroundStyle(Color.white.opacity(0.60))
-            if let detail {
-                Text(detail)
-                    .font(.system(size: 9))
-                    .foregroundStyle(Color.white.opacity(0.38))
-            }
+            IslandEmptyHint(
+                title: title,
+                subtitle: detail,
+                icon: icon
+            )
             if let primaryTitle, let primaryAction {
                 HStack(spacing: 6) {
                     actionButton(title: primaryTitle, action: primaryAction)

@@ -11,6 +11,7 @@
 - 使用本地音乐文件、目录、拖拽导入、持久化播放列表和线上发现驱动 expanded mini player
 - 提供无配对的局域网网页遥控器，用手机或浏览器控制播放
 - 在 expanded 底部临时收集文件 / 文件夹并原生拖出使用
+- 展开态底部显示 GPU 温度、风扇使用率、CPU / 内存占用和上下行网速
 
 ## 文档索引
 
@@ -37,7 +38,7 @@
 - 多显示器基础策略：优先在鼠标所在屏幕显示
 - shoulder 肩部半径跟随展开 / 收起动画平滑过渡（compact 5 → expanded 10）
 - NotchIslandShape 通过 AnimatablePair 实现形状参数插值动画
-- Mascot 角色动画系统（Canvas + TimelineView，idle / working / music 三种状态，7 个角色）
+- Mascot 角色动画系统（idle / working / music 三种状态，4 个角色：Ghost、Pixel Ghost、Pixel Crab、Pixel Puppy）
 - Onion 设置页（角色、收起态频谱风格、星云氛围背景、动态粒子与联网歌词开关）
 - `@AppStorage` / UserDefaults 持久化：角色、频谱风格、默认输出设备、氛围背景、粒子效果、联网歌词、播放列表、快捷启动、临时暂存、遥控器、自动监听和网易云相关偏好；线上发现歌曲列表及其播放失败状态不持久化
 - 右侧工具按钮组：展开后显示静音、打开设置、退出 Onion

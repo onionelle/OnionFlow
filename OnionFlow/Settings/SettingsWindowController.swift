@@ -71,7 +71,11 @@ final class SettingsWindowController: NSObject {
         let hostingView = SettingsHostingView(rootView: AnyView(pickerView))
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
-        let initialSize = NSSize(width: panelWidth, height: sanitizedPanelHeight(hostingView.fittingSize.height))
+        let fittingHeight = hostingView.fittingSize.height
+        if fittingHeight < 1 {
+            DiagnosticLogService.shared.log("settings.show.empty_content")
+        }
+        let initialSize = NSSize(width: panelWidth, height: sanitizedPanelHeight(fittingHeight))
         hostingView.setFrameSize(initialSize)
 
         // 设置页需要完整接收鼠标并可拖动，不使用会保持底层交互语义的 nonactivating panel。
@@ -157,6 +161,9 @@ final class SettingsWindowController: NSObject {
         NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
+        if !panel.isVisible {
+            DiagnosticLogService.shared.log("settings.show.not_visible")
+        }
     }
 
     func close(suppressingImmediateReopen: Bool = false) {

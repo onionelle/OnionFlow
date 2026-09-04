@@ -16,6 +16,8 @@ private final class IslandPanel: NSPanel {
 private final class IslandHostingView: NSHostingView<ContentView> {
     private let viewModel: IslandViewModel
     private let dropCoordinator: IslandDropCoordinator
+    private var trackingArea: NSTrackingArea?
+    var onCursorUpdate: (() -> Void)?
 
     init(rootView: ContentView, viewModel: IslandViewModel, musicViewModel: MusicPlayerViewModel, quickLaunchViewModel: QuickLaunchViewModel, temporaryTrayViewModel: TemporaryTrayViewModel) {
         self.viewModel = viewModel
@@ -51,6 +53,27 @@ private final class IslandHostingView: NSHostingView<ContentView> {
     override func resetCursorRects() {
         super.resetCursorRects()
         addCursorRect(visibleIslandRectInWindow, cursor: .arrow)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        onCursorUpdate?()
+        // 必须转给 SwiftUI，否则顶栏 onHover（音量条展开等）不会触发。
+        super.mouseMoved(with: event)
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -145,11 +168,14 @@ final class FloatingPanelController {
     private let musicViewModel: MusicPlayerViewModel
     private let quickLaunchViewModel: QuickLaunchViewModel
     private let temporaryTrayViewModel: TemporaryTrayViewModel
+    private let systemMetricsViewModel: SystemMetricsViewModel
     private var panel: NSPanel?
     private var screenObserver: NSObjectProtocol?
     private var localMouseMonitor: Any?
     private var globalMouseMonitor: Any?
     private var isSystemModalActive = false
+    private var lastIgnoresMouseEvents: Bool?
+    private var monitorsTrackMouseMoved = false
 
     var currentSettingsAnchorFrame: NSRect? {
         guard let panel else { return nil }
@@ -165,14 +191,16 @@ final class FloatingPanelController {
         )
     }
 
-    init(viewModel: IslandViewModel, musicViewModel: MusicPlayerViewModel, quickLaunchViewModel: QuickLaunchViewModel, temporaryTrayViewModel: TemporaryTrayViewModel) {
+    init(viewModel: IslandViewModel, musicViewModel: MusicPlayerViewModel, quickLaunchViewModel: QuickLaunchViewModel, temporaryTrayViewModel: TemporaryTrayViewModel, systemMetricsViewModel: SystemMetricsViewModel) {
         self.viewModel = viewModel
         self.musicViewModel = musicViewModel
         self.quickLaunchViewModel = quickLaunchViewModel
         self.temporaryTrayViewModel = temporaryTrayViewModel
+        self.systemMetricsViewModel = systemMetricsViewModel
         self.viewModel.onLayoutChange = { [weak self] in
             // AppKit frame 不做动画，顶部固定感交给 SwiftUI 内部壳体动画实现。
             self?.updatePanelLayout()
+            self?.refreshMousePassthroughMonitors()
             self?.updateMousePassthrough()
         }
         screenObserver = NotificationCenter.default.addObserver(
@@ -191,7 +219,7 @@ final class FloatingPanelController {
             createPanel()
         }
         updatePanelLayout()
-        installMousePassthroughMonitorsIfNeeded()
+        refreshMousePassthroughMonitors()
         updateMousePassthrough()
         panel?.orderFrontRegardless()
     }
@@ -212,7 +240,8 @@ final class FloatingPanelController {
             viewModel: viewModel,
             musicViewModel: musicViewModel,
             quickLaunchViewModel: quickLaunchViewModel,
-            temporaryTrayViewModel: temporaryTrayViewModel
+            temporaryTrayViewModel: temporaryTrayViewModel,
+            systemMetricsViewModel: systemMetricsViewModel
         )
         let hostingView = IslandHostingView(
             rootView: contentView,
@@ -223,6 +252,9 @@ final class FloatingPanelController {
         )
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        hostingView.onCursorUpdate = { [weak self] in
+            self?.updateMousePassthrough()
+        }
         let panel = IslandPanel(
             contentRect: NSRect(
                 x: 0,
@@ -235,6 +267,7 @@ final class FloatingPanelController {
             defer: false
         )
         panel.isFloatingPanel = true
+        // 只在光标位于本窗口上时产生 mouseMoved，供肩部透明区穿透；全局移动监听仅在 expanded 开启。
         panel.acceptsMouseMovedEvents = true
         panel.level = .statusBar
         panel.backgroundColor = .clear
@@ -248,9 +281,29 @@ final class FloatingPanelController {
         self.panel = panel
     }
 
-    private func installMousePassthroughMonitorsIfNeeded() {
-        guard localMouseMonitor == nil, globalMouseMonitor == nil else { return }
-        let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseDragged, .rightMouseDragged]
+    private var needsExpandedMouseTracking: Bool {
+        viewModel.isExpanded || viewModel.reservesExpandedWindow
+    }
+
+    private func refreshMousePassthroughMonitors() {
+        let trackMouseMoved = needsExpandedMouseTracking
+        if localMouseMonitor != nil, globalMouseMonitor != nil, monitorsTrackMouseMoved == trackMouseMoved {
+            return
+        }
+        if let localMouseMonitor {
+            NSEvent.removeMonitor(localMouseMonitor)
+            self.localMouseMonitor = nil
+        }
+        if let globalMouseMonitor {
+            NSEvent.removeMonitor(globalMouseMonitor)
+            self.globalMouseMonitor = nil
+        }
+        var mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        if trackMouseMoved {
+            mask.insert(.mouseMoved)
+            mask.insert(.leftMouseDragged)
+            mask.insert(.rightMouseDragged)
+        }
         localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
             self?.updateMousePassthrough()
             return event
@@ -260,22 +313,30 @@ final class FloatingPanelController {
                 self?.updateMousePassthrough()
             }
         }
+        monitorsTrackMouseMoved = trackMouseMoved
     }
 
     private func updateMousePassthrough() {
         guard let panel else { return }
         guard !isSystemModalActive else {
-            panel.ignoresMouseEvents = false
+            setIgnoresMouseEvents(false, on: panel)
             return
         }
         let mouseLocation = NSEvent.mouseLocation
         // NSPanel 是矩形窗口；当 SwiftUI 壳体收缩后，剩余透明区域必须在窗口级别穿透。
         // contentView 的 hitTest 只能影响窗口内部路由，窗口级穿透也要使用同一份 notch 路径。
         if let hostingView = panel.contentView as? IslandHostingView {
-            panel.ignoresMouseEvents = !hostingView.containsVisibleIslandPointInScreen(mouseLocation, panelFrame: panel.frame)
+            let shouldIgnore = !hostingView.containsVisibleIslandPointInScreen(mouseLocation, panelFrame: panel.frame)
+            setIgnoresMouseEvents(shouldIgnore, on: panel)
         } else {
-            panel.ignoresMouseEvents = false
+            setIgnoresMouseEvents(false, on: panel)
         }
+    }
+
+    private func setIgnoresMouseEvents(_ ignores: Bool, on panel: NSPanel) {
+        guard lastIgnoresMouseEvents != ignores else { return }
+        lastIgnoresMouseEvents = ignores
+        panel.ignoresMouseEvents = ignores
     }
 
     private func updatePanelLayout() {

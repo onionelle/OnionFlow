@@ -43,11 +43,21 @@ final class RemoteControlServer: ObservableObject {
                     self?.handle(connection)
                 }
             }
+            listener.stateUpdateHandler = { state in
+                if case .failed(let error) = state {
+                    DiagnosticLogService.shared.log("remote.listener.failed", [
+                        "error": error.localizedDescription
+                    ])
+                }
+            }
             listener.start(queue: listenerQueue)
             self.listener = listener
             refreshLocalURL()
         } catch {
             localURL = "遥控器启动失败"
+            DiagnosticLogService.shared.log("remote.start.failed", [
+                "error": error.localizedDescription
+            ])
         }
     }
 
@@ -1858,9 +1868,15 @@ actor DownloadManager {
                         }
                     }
                 } else {
+                    DiagnosticLogService.shared.log("download.ytdlp.failed", [
+                        "status": String(process.terminationStatus)
+                    ])
                     await setStatus(for: url, status: "failed")
                 }
             } catch {
+                DiagnosticLogService.shared.log("download.ytdlp.failed", [
+                    "error": error.localizedDescription
+                ])
                 await setStatus(for: url, status: "failed")
             }
         }
@@ -1906,7 +1922,10 @@ actor DownloadManager {
             self.onDownloadCompleted?(destURL)
             
         } catch {
-            print("NetEase download failed: \(error)")
+            DiagnosticLogService.shared.log("download.netease.failed", [
+                "songID": id,
+                "error": error.localizedDescription
+            ])
             self.downloadTasks[urlKey] = "failed:\(error.localizedDescription)"
         }
     }

@@ -139,7 +139,12 @@ final class IslandViewModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 360_000_000)
             guard !Task.isCancelled else { return }
             if self?.isExpanded == false {
-                self?.reservesExpandedWindow = false
+                // 壳体已经收完；关掉窗口预留时禁止再跑一段默认动画，否则收起结尾会硬切。
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    self?.reservesExpandedWindow = false
+                }
             }
         }
     }

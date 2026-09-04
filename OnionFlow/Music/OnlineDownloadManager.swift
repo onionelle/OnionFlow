@@ -54,6 +54,19 @@ final class OnlineDownloadManager: ObservableObject {
             observations.removeValue(forKey: song.id)
         }
         
+        do {
+            try await performDownload(song: song)
+        } catch {
+            DiagnosticLogService.shared.log("download.failed", [
+                "songID": String(song.id),
+                "title": song.name,
+                "error": error.localizedDescription
+            ])
+            throw error
+        }
+    }
+
+    private func performDownload(song: NeteaseSong) async throws {
         // Fetch direct URL
         let response = try await NeteaseAPIClient.shared.fetchSongURL(id: "\(song.id)")
         guard let urlString = response.data?.first?.url, let url = URL(string: urlString.replacingOccurrences(of: "http://", with: "https://")) else {

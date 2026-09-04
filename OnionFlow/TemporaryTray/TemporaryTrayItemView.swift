@@ -28,7 +28,7 @@ struct TemporaryTrayItemView: View {
                 }
 
                 Text(item.displayName)
-                    .font(.system(size: 8.8, weight: .regular))
+                    .font(.system(size: 9, weight: .regular))
                     .foregroundStyle(Color.white.opacity(item.isAvailable ? 0.62 : 0.34))
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -121,9 +121,9 @@ struct TemporaryTrayItemView: View {
     private var modeBadge: some View {
         HStack(spacing: 1) {
             Image(systemName: item.transferMode.systemImage)
-                .font(.system(size: 5.5, weight: .regular))
+                .font(.system(size: 6, weight: .regular))
             Text(item.transferMode.label)
-                .font(.system(size: 5.8, weight: .regular))
+                .font(.system(size: 6, weight: .regular))
         }
         .foregroundStyle(Color.black.opacity(0.85))
         .padding(.horizontal, 3)
@@ -150,7 +150,7 @@ struct TemporaryTrayItemView: View {
 
     private var selectedBadge: some View {
         Image(systemName: "checkmark")
-            .font(.system(size: 6.2, weight: .black))
+            .font(.system(size: 6, weight: .regular))
             .foregroundStyle(Color.black.opacity(0.85))
             .frame(width: 12, height: 12)
             .background(

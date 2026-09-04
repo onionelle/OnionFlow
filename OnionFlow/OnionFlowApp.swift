@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let musicViewModel = MusicPlayerViewModel()
     let quickLaunchViewModel = QuickLaunchViewModel()
     let temporaryTrayViewModel = TemporaryTrayViewModel()
+    let systemMetricsViewModel = SystemMetricsViewModel()
     lazy var remoteControlServer = RemoteControlServer(musicViewModel: musicViewModel)
     lazy var folderMonitor = MusicFolderMonitor()
     var panelController: FloatingPanelController?
@@ -26,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        DiagnosticLogService.shared.start()
+        systemMetricsViewModel.start()
         NSApp.setActivationPolicy(.accessory)
         settingsController.onVisibilityChange = { [weak self] isPresented in
             self?.viewModel.setSettingsPresented(isPresented)
@@ -51,7 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             viewModel: viewModel,
             musicViewModel: musicViewModel,
             quickLaunchViewModel: quickLaunchViewModel,
-            temporaryTrayViewModel: temporaryTrayViewModel
+            temporaryTrayViewModel: temporaryTrayViewModel,
+            systemMetricsViewModel: systemMetricsViewModel
         )
         panelController?.show()
         if UserDefaults.standard.object(forKey: "remoteControlEnabled") == nil {
@@ -117,7 +121,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         remoteControlServer.stop()
         folderMonitor.stop()
+        systemMetricsViewModel.stop()
         persistMusicStateForTermination()
+        DiagnosticLogService.shared.logAndFlush("app.terminate")
     }
     func persistMusicStateAndQuit() {
         persistMusicStateForTermination()
@@ -128,6 +134,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     func toggleSettings() {
         settingsController.toggle(alignedTo: panelController?.currentSettingsAnchorFrame)
+    }
+    func revealDiagnosticsLog() {
+        DiagnosticLogService.shared.revealInFinder()
     }
     private func quitApp() {
         persistMusicStateAndQuit()
@@ -148,6 +157,7 @@ struct MenuBarContent: View {
     @ObservedObject var musicViewModel: MusicPlayerViewModel
     @ObservedObject var remoteControlServer: RemoteControlServer
     let showSettings: () -> Void
+    let revealDiagnosticsLog: () -> Void
     let quitApp: () -> Void
 
     var body: some View {
@@ -177,7 +187,7 @@ struct MenuBarContent: View {
         }
 
         Text("遥控器: \(remoteControlServer.localURL)")
-            .font(.caption)
+            .font(.system(size: 11, weight: .light))
             .foregroundStyle(.secondary)
 
         Divider()
@@ -198,6 +208,12 @@ struct MenuBarContent: View {
             Label("设置与偏好...", systemImage: "gearshape")
         }
         .keyboardShortcut(",", modifiers: .command)
+
+        Button(action: {
+            revealDiagnosticsLog()
+        }) {
+            Label("在 Finder 中显示诊断日志", systemImage: "doc.text")
+        }
 
         Divider()
 
@@ -221,6 +237,7 @@ struct OnionFlowApp: App {
                 musicViewModel: appDelegate.musicViewModel,
                 remoteControlServer: appDelegate.remoteControlServer,
                 showSettings: { appDelegate.showSettings() },
+                revealDiagnosticsLog: { appDelegate.revealDiagnosticsLog() },
                 quitApp: { appDelegate.persistMusicStateAndQuit() }
             )
         }

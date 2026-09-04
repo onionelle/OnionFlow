@@ -51,7 +51,7 @@ struct NeteaseDiscoveryView: View {
                             }
                         } label: {
                             Text(chart.shortName)
-                                .font(.system(size: 9.5, weight: .regular))
+                                .font(.system(size: 9, weight: .regular))
                                 .foregroundStyle(
                                     musicViewModel.selectedChartId == chart.id 
                                     ? musicAccentColor 
@@ -85,7 +85,7 @@ struct NeteaseDiscoveryView: View {
                         }
                     } label: {
                         Text("相似")
-                            .font(.system(size: 9.5, weight: .regular))
+                            .font(.system(size: 9, weight: .regular))
                             .foregroundStyle(
                                 musicViewModel.selectedChartId == "simi" 
                                 ? musicAccentColor 
@@ -119,7 +119,7 @@ struct NeteaseDiscoveryView: View {
                             } label: {
                                 HStack(spacing: 2) {
                                     Text(isUserPlaylist ? (selectedUserPlaylistName ?? "我的网易云歌单") : "我的网易云歌单")
-                                        .font(.system(size: 9.5, weight: .regular))
+                                        .font(.system(size: 9, weight: .regular))
                                         .lineLimit(1)
                                         .truncationMode(.tail)
                                         .frame(maxWidth: 90)
@@ -129,7 +129,7 @@ struct NeteaseDiscoveryView: View {
                                             : (hoveredChartId == "menu" ? musicAccentColor.opacity(0.8) : .white.opacity(0.48))
                                         )
                                     Image(systemName: "chevron.down")
-                                        .font(.system(size: 6.5))
+                                        .font(.system(size: 6, weight: .regular))
                                         .foregroundStyle(
                                             isUserPlaylist 
                                             ? musicAccentColor 
@@ -165,9 +165,9 @@ struct NeteaseDiscoveryView: View {
                     } label: {
                         HStack(spacing: 3) {
                             Image(systemName: autoDownloadOnPlay ? "square.and.arrow.down.fill" : "square.and.arrow.down")
-                                .font(.system(size: 8.5))
+                                .font(.system(size: 9, weight: .regular))
                             Text("边听边存")
-                                .font(.system(size: 9.5, weight: .regular))
+                                .font(.system(size: 9, weight: .regular))
                         }
                         .foregroundStyle(
                             autoDownloadOnPlay 
@@ -209,7 +209,7 @@ struct NeteaseDiscoveryView: View {
                         }
                     }) {
                         Image(systemName: "magnifyingglass")
-                            .font(.system(size: 9))
+                            .font(.system(size: 9, weight: .regular))
                             .foregroundColor(isSearchVisible || hoveredChartId == "searchToggle" ? musicAccentColor : .white.opacity(0.5))
                     }
                     .buttonStyle(.plain)
@@ -228,7 +228,7 @@ struct NeteaseDiscoveryView: View {
                     } else {
                         Button(action: { loadSongs(for: musicViewModel.selectedChartId, forceRefresh: true) }) {
                             Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 9))
+                                .font(.system(size: 9, weight: .regular))
                                 .foregroundColor(hoveredChartId == "refresh" ? musicAccentColor : .white.opacity(0.5))
                         }
                         .buttonStyle(.plain)
@@ -251,17 +251,18 @@ struct NeteaseDiscoveryView: View {
                 if isSearchVisible {
                     HStack {
                         Image(systemName: "magnifyingglass")
-                            .font(.system(size: 10, weight: .regular))
+                            .font(.system(size: 9, weight: .regular))
                             .foregroundStyle(Color.white.opacity(0.4))
                         ZStack(alignment: .leading) {
                             if searchText.isEmpty {
                                 Text("搜索网易云音乐...")
-                                    .font(.system(size: 9.8, weight: .regular))
-                                    .foregroundColor(.white.opacity(0.35))
+                                    .font(.system(size: 9, weight: .regular))
+                                    .tracking(0.28)
+                                    .foregroundColor(.white.opacity(0.28))
                             }
                             TextField("", text: $searchText)
                                 .textFieldStyle(.plain)
-                                .font(.system(size: 9.8, weight: .regular))
+                                .font(.system(size: 9, weight: .regular))
                                 .foregroundColor(.white.opacity(0.85))
                                 .focused($isSearchFocused)
                                 .onSubmit {
@@ -281,7 +282,7 @@ struct NeteaseDiscoveryView: View {
                                 isSearchFocused = true
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 9, weight: .regular))
                                     .foregroundStyle(Color.white.opacity(0.4))
                             }
                             .buttonStyle(.plain)
@@ -300,9 +301,10 @@ struct NeteaseDiscoveryView: View {
                 if UserDefaults.standard.string(forKey: "NeteaseCookie") == nil || UserDefaults.standard.string(forKey: "NeteaseCookie")?.isEmpty == true {
                     HStack(spacing: 4) {
                         Image(systemName: "info.circle")
-                            .font(.system(size: 8.2))
+                            .font(.system(size: 8, weight: .regular))
                         Text("当前未配置网易云 Cookie，如需无损音质及私人歌单，请在设置中配置。")
-                            .font(.system(size: 8.2))
+                            .font(.system(size: 8, weight: .regular))
+                            .tracking(0.22)
                     }
                     .foregroundColor(.white.opacity(0.32))
                     .padding(.horizontal, 10)
@@ -380,11 +382,11 @@ struct NeteaseDiscoveryView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "music.note.list")
-                                .font(.system(size: 9))
+                                .font(.system(size: 9, weight: .regular))
                                 .foregroundStyle(musicViewModel.selectedChartId == String(playlist.id) ? musicAccentColor : Color.white.opacity(0.48))
                             
                             Text(playlist.name)
-                                .font(.system(size: 9.8, weight: .regular))
+                                .font(.system(size: 9, weight: .regular))
                                 .foregroundStyle(musicViewModel.selectedChartId == String(playlist.id) ? musicAccentColor : Color.white.opacity(0.72))
                                 .lineLimit(1)
                                 .truncationMode(.tail)
@@ -523,61 +525,36 @@ struct NeteaseDiscoveryView: View {
     }
     
     private var statusPlaceholderView: some View {
-        VStack(spacing: 6) {
+        VStack {
             Spacer()
             if let error = errorMessage {
                 if error == "请先播放一首在线歌曲以获取相似推荐" {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundStyle(musicAccentColor.opacity(0.68))
-                    VStack(spacing: 2) {
-                        Text("获取相似推荐")
-                            .font(.system(size: 11, weight: .regular))
-                            .foregroundStyle(Color.white.opacity(0.68))
-                        Text("请先播放一首在线歌曲")
-                            .font(.system(size: 9.5, weight: .regular))
-                            .foregroundStyle(Color.white.opacity(0.38))
-                    }
+                    IslandEmptyHint(
+                        title: "获取相似推荐",
+                        subtitle: "请先播放一首在线歌曲",
+                        icon: "sparkles"
+                    )
                 } else {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundStyle(Color.orange.opacity(0.68))
-                    VStack(spacing: 2) {
-                        Text("加载失败")
-                            .font(.system(size: 11, weight: .regular))
-                            .foregroundStyle(Color.white.opacity(0.68))
-                        Text(error)
-                            .font(.system(size: 9.5, weight: .regular))
-                            .foregroundStyle(Color.white.opacity(0.38))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 20)
-                    }
+                    IslandEmptyHint(
+                        title: "加载失败",
+                        subtitle: error,
+                        icon: "exclamationmark.triangle"
+                    )
+                    .padding(.horizontal, 20)
                 }
             } else if musicViewModel.onlinePlaylist.isEmpty {
                 if musicViewModel.selectedChartId == "search" {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundStyle(Color.white.opacity(0.42))
-                    VStack(spacing: 2) {
-                        Text("未找到歌曲")
-                            .font(.system(size: 11, weight: .regular))
-                            .foregroundStyle(Color.white.opacity(0.68))
-                        Text("请尝试更换搜索词重新输入")
-                            .font(.system(size: 9.5, weight: .regular))
-                            .foregroundStyle(Color.white.opacity(0.38))
-                    }
+                    IslandEmptyHint(
+                        title: "未找到歌曲",
+                        subtitle: "请尝试更换搜索词重新输入",
+                        icon: "magnifyingglass"
+                    )
                 } else {
-                    Image(systemName: "music.note.house")
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundStyle(Color.white.opacity(0.42))
-                    VStack(spacing: 2) {
-                        Text("暂无歌曲")
-                            .font(.system(size: 11, weight: .regular))
-                            .foregroundStyle(Color.white.opacity(0.68))
-                        Text("请选择其他榜单或播放歌曲")
-                            .font(.system(size: 9.5, weight: .regular))
-                            .foregroundStyle(Color.white.opacity(0.38))
-                    }
+                    IslandEmptyHint(
+                        title: "暂无歌曲",
+                        subtitle: "请选择其他榜单或播放歌曲",
+                        icon: "music.note.house"
+                    )
                 }
             }
             Spacer()
@@ -656,7 +633,7 @@ struct NeteaseOnlinePreviewItem: View {
                                 .frame(width: 8)
                         } else {
                             Text("\(index + 1)")
-                                .font(.system(size: 9.2, weight: .regular, design: .monospaced))
+                                .font(.system(size: 8, weight: .regular, design: .monospaced))
                                 .italic()
                                 .foregroundStyle(isFailed ? failureColor.opacity(0.48) : Color.white.opacity(0.30))
                         }
@@ -664,20 +641,20 @@ struct NeteaseOnlinePreviewItem: View {
                     .frame(width: 20, alignment: .trailing)
 
                     Text(song.name)
-                        .font(.system(size: 9.8, weight: .regular))
+                        .font(.system(size: 9, weight: .regular))
                         .foregroundStyle(isFailed ? failureColor.opacity(0.68) : (isCurrentTrack ? musicAccentColor : Color.white.opacity(0.64)))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     
                     Text("- " + song.artistName)
-                        .font(.system(size: 9.8, weight: .regular))
+                        .font(.system(size: 9, weight: .regular))
                         .foregroundStyle(isFailed ? failureColor.opacity(0.35) : Color.white.opacity(0.30))
                         .lineLimit(1)
                         .truncationMode(.tail)
 
                     if isFailed {
                         Text(failureLabel)
-                            .font(.system(size: 8.5, weight: .semibold))
+                            .font(.system(size: 9, weight: .regular))
                             .foregroundStyle(failureColor.opacity(0.75))
                     }
 
@@ -708,7 +685,7 @@ struct NeteaseOnlinePreviewItem: View {
             } label: {
                 if downloadManager.isDownloaded(song: song) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 11, weight: .regular))
+                        .font(.system(size: 9, weight: .regular))
                         .foregroundColor(musicAccentColor)
                 } else if downloadManager.downloadingSongIDs.contains(song.id) {
                     ZStack {
@@ -725,16 +702,16 @@ struct NeteaseOnlinePreviewItem: View {
                     }
                 } else if let errorMsg = downloadManager.downloadErrors[song.id] {
                     Image(systemName: "exclamationmark.circle.fill")
-                        .font(.system(size: 11, weight: .regular))
+                        .font(.system(size: 9, weight: .regular))
                         .foregroundColor(.red)
                         .help(errorMsg)
                 } else if isFailed {
                     Image(systemName: "exclamationmark.circle.fill")
-                        .font(.system(size: 11, weight: .regular))
+                        .font(.system(size: 9, weight: .regular))
                         .foregroundColor(.red)
                 } else {
                     Image(systemName: "arrow.down.circle")
-                        .font(.system(size: 11, weight: .regular))
+                        .font(.system(size: 9, weight: .regular))
                         .foregroundColor(downloadButtonForeground)
                 }
             }

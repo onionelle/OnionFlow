@@ -49,7 +49,7 @@ struct QuickLaunchView: View {
                 viewModel.dropFrame = frame
             }
         )
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 0)
     }
 
     private var highlightedSlotIndex: Int? {
@@ -58,14 +58,10 @@ struct QuickLaunchView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 2) {
-            Text("拖入常用 App")
-                .font(.system(size: 9.6, weight: .regular))
-                .foregroundStyle(Color.white.opacity(0.52))
-            Text("用于快速打开，也可稍后调整位置")
-                .font(.system(size: 8.2, weight: .regular))
-                .foregroundStyle(Color.white.opacity(0.30))
-        }
+        IslandEmptyHint(
+            title: "拖入常用 App",
+            subtitle: "用于快速打开，也可稍后调整位置"
+        )
     }
 
     private func placeholder(isDropTarget: Bool) -> some View {
@@ -87,7 +83,7 @@ struct QuickLaunchView: View {
             }
             .overlay {
                 Image(systemName: "plus")
-                    .font(.system(size: 8, weight: .medium))
+                    .font(.system(size: 8, weight: .regular))
                     .foregroundStyle(
                         isDropTarget
                             ? Color.white.opacity(0.62)
