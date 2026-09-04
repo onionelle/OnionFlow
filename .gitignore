@@ -18,6 +18,7 @@ xcuserdata/
 # AI tool configs
 .claude/
 .codex/
+AGENTS.md
 
 # Temp scripts
 *.py
