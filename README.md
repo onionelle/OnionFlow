@@ -1,5 +1,11 @@
 # Onion Flow
 
+<p align="center">
+  <img src="docs/assets/screenshot-expanded-island.png" alt="Onion 展开态：顶部贴边 island，上方为播放控制与线上发现列表，下方为快捷启动 dock 与系统状态条" width="860">
+</p>
+
+<p align="center">展开态：顶部贴边 island，上方为播放控制与本地曲库 / 线上发现 / 歌词，下方为快捷启动 dock 与 GPU 温度、风扇、CPU / 内存、网速状态条。</p>
+
 **Onion Flow**（简称 **Onion**）是一个使用 `SwiftUI` + `AppKit` 开发的 macOS 原生桌面应用，目标是在屏幕顶部中央提供一个类似 MacBook 刘海 / Dynamic Island 的交互式状态面板。
 
 当前项目已完成音乐 mini player、线上发现、歌词、局域网遥控、快捷启动和临时暂存等基础接入，当前重点验证以下能力：
